@@ -162,3 +162,5 @@ cython_debug/
 animals/
 archive.zip
 results/*
+
+*.DS_Store

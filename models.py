@@ -1,6 +1,8 @@
-from keras import Model
-from keras import layers
-
+import tensorflow as tf
+from keras import layers, Model
+from keras.applications import ResNet50V2, MobileNetV2, EfficientNetB0
+from layers import IdentityBlock, ConvolutionBlock, Inception
+from typing import List, Tuple
 
 class SimpleModel(Model):
     def __init__(self, num_classes: int):
@@ -62,53 +64,6 @@ class MidModel(Model):
         x = self.dense(x)
         return self.output_layer(x)
 
-
-class ConvolutionBlock(layers.Layer):
-    def __init__(self, filters):
-        super(ConvolutionBlock, self).__init__()
-        self.conv1 = layers.Conv2D(filters, kernel_size=3, strides=2, padding="same")
-        self.bn1 = layers.BatchNormalization()
-        self.conv2 = layers.Conv2D(filters, kernel_size=3, strides=1, padding="same")
-        self.bn2 = layers.BatchNormalization()
-
-        self.skip_conv = layers.Conv2D(filters, kernel_size=1, strides=2)
-
-    def call(self, inputs, training=False):
-        x_skipped = inputs
-        x = self.conv1(inputs)
-        x = self.bn1(x, training=training)
-        x = layers.ReLU()(x)
-        x = self.conv2(x)
-        x = self.bn2(x, training=training)
-
-        x_skipped = self.skip_conv(x_skipped)
-
-        x = layers.Add()([x, x_skipped])
-        x = layers.ReLU()(x)
-        return x
-
-
-class IdentityBlock(layers.Layer):
-    def __init__(self, filters):
-        super(IdentityBlock, self).__init__()
-        self.conv1 = layers.Conv2D(filters, kernel_size=3, strides=1, padding="same")
-        self.bn1 = layers.BatchNormalization()
-        self.conv2 = layers.Conv2D(filters, kernel_size=3, strides=1, padding="same")
-        self.bn2 = layers.BatchNormalization()
-
-    def call(self, inputs, training=False):
-        x_skipped = inputs
-        x = self.conv1(inputs)
-        x = self.bn1(x, training=training)
-        x = layers.ReLU()(x)
-        x = self.conv2(inputs)
-        x = self.bn2(x, training=training)
-
-        x = layers.Add()([x, x_skipped])
-        x = layers.ReLU()(x)
-        return x
-
-
 class CustomResNet(Model):
     def __init__(self, num_classes: int, num_blocks: int = 4, filters_size: int = 64):
         super(CustomResNet, self).__init__()
@@ -146,3 +101,69 @@ class CustomResNet(Model):
         x = self.dense(x)
         x = layers.GlobalAveragePooling2D()(x)
         return self.output_layer(x)
+
+class InceptionModel(Model):
+    def __init__(self, num_classes: int, num_blocks: int, n_filters = List[Tuple[int]], kernel_size: int = 3, dropout: float = 0.2):
+        super(InceptionModel, self).__init__()
+
+        self.rescaling = layers.Rescaling(1.0 / 255)
+    
+        self.inception_blocks = []
+        self.convolutional_blocks = []
+        self.batch_norm_layers = []
+
+        for i in range(num_blocks):
+            self.inception_blocks.append(Inception(n_filters=n_filters[i]))
+            self.convolutional_blocks.append(layers.Conv2D(n_filters[i][-1], kernel_size = kernel_size))
+            self.batch_norm_layers.append(layers.BatchNormalization())
+
+        self.dense = layers.Dense(1000, activation="relu")
+        self.dropout = layers.Dropout(dropout)
+        self.output_layer = layers.Dense(num_classes, activation="softmax")
+
+    def call(self, inputs: tf.Tensor, training=False):
+        x = self.rescaling(inputs)
+        
+        for i, (block, conv, bn) in enumerate(zip(self.inception_blocks, self.convolutional_blocks, self.batch_norm_layers)):
+            x = block(x)
+            x = conv(x)
+            x = bn(x, training = training)
+
+            if i != len(self.inception_blocks)-1:
+                x = layers.MaxPool2D()(x)
+        
+        x = layers.Flatten()(x)
+        x = self.dropout(x)
+        x = self.dense(x)
+        
+        return self.output_layer(x)
+
+class PretrainedModel(Model):
+    AVAILABLE = {'resnet': ResNet50V2, 'mobilenet': MobileNetV2, 'efficientnet': EfficientNetB0}
+    
+    def __init__(self, num_classes: int, img_size: int,  pretrained: str, proj: int = 1000, defreeze: int = -1):
+        """Image classifier model with pretrained weights.
+
+        Args:
+            num_classes (int): Number of target classes.
+            pretrained (str): Pretrained model on Imagenet.
+            img_size (int): Dimension of the image.
+            proj (int, optional): Hidden dense projection.
+            defreeze (int, optional): Number of layers to defreeze.. Defaults to -1.
+        """
+        assert pretrained in self.AVAILABLE.keys(), 'Pretrained model not available for this implementation'
+        super().__init__(name='PretrainedModel')
+        
+        self.rescaling = layers.Rescaling(1.0 / 255)
+        self.model = freeze(self.AVAILABLE[pretrained](weights='imagenet', include_top=False, input_shape=(img_size, img_size, 3)), defreeze)
+        self.flatten = layers.Flatten()
+        self.proj = layers.Dense(proj, activation='relu')
+        self.dense = layers.Dense(num_classes, activation="softmax")
+
+    def call(self, inputs, training=False):
+        x = self.rescaling(inputs)
+        x = self.model(x)
+        x = self.flatten(x)
+        x = self.proj(x)
+        x = self.dense(x)
+        return x
