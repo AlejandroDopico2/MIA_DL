@@ -23,8 +23,8 @@ def reset():
 
 
 def load_data(
-    base_dir: str, img_size: int = 128, batch_size: int = 64
-) -> Tuple[Dataset, Dataset, Dataset]:
+        base_dir: str, img_size: int = 128, batch_size: int = 64
+    ) -> Tuple[Dataset, Dataset, Dataset]:
 
     train_dataset, val_dataset = image_dataset_from_directory(
         base_dir + "/train",
