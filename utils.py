@@ -103,3 +103,38 @@ def number_params(model: Model) -> Tuple[int, int]:
 
 def evaluate(models: List[Model], test: Dataset, batch_size: int) -> List[float]:
     return [model.evaluate(test, batch_size=batch_size, verbose=False)[1] for  model in models]
+
+
+def comparison(
+    models: List[Model], 
+    datasets: Tuple[Dataset, Dataset],
+    colors: List[str] = px.colors.qualitative.D3, 
+    symbols: List[str] = ['circle', 'square']
+) -> go.Figure:
+    params = [number_params(model)[0] for model in models]
+    # order by params 
+    order = np.argsort(params)
+    models = [models[i] for i in order]
+    params = [params[i] for i in order]
+    names = [model.name for model in models]
+    accs = [evaluate(models, data, BATCH_SIZE) for data in datasets]
+    fig = make_subplots(
+        rows=1, cols=2, vertical_spacing=0, subplot_titles=['Custom models accuracy', 'Overfitting comparison'])
+    for i, (acc, sett) in enumerate(zip(accs, ('train', 'test'))):
+        fig.add_trace(
+            go.Scatter(x=params, y=acc, mode='lines+markers+text', name=sett, text=names, 
+                       textposition='top center', marker=dict(color=colors[i], size=12, symbol=symbols[i])
+            ), row=1, col=1)
+    fig.add_trace(
+        go.Scatter(x=params, y=np.subtract(*accs), mode='lines+markers+text', text=names, name='difference',
+                   textposition='top center', marker=dict(color=colors[2], size=12, symbol='diamond'), 
+    ), row=1, col=2)
+    fig.update_yaxes(title_text='acc', row=1, col=2)
+    fig.update_xaxes(title_text='#params', row=1, col=2)
+    fig.update_layout(
+        height=500, width=1500, template='seaborn',
+        yaxis=dict(range=[0.7, 1.05], title_text='acc'), 
+        xaxis=dict(range=[-1e6, max(params)+max(params)*0.15], title_text='#params'),
+        margin=dict(t=30, b=10, l=0, r=0), 
+        )
+    return fig

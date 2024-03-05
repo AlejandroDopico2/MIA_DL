@@ -3,7 +3,7 @@ from keras.models import Model
 from keras import layers 
 from keras.applications import ResNet50V2, MobileNetV2, EfficientNetB0
 from layers import IdentityBlock, ConvolutionBlock, Inception
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from utils import freeze
 
 class SimpleModel(Model):
@@ -149,9 +149,17 @@ class InceptionModel(Model):
         return self.output_layer(x)
 
 class PretrainedModel(Model):
-    AVAILABLE = {'ResNet50': ResNet50V2, 'MobileNet': MobileNetV2, 'EfficientNetB0': EfficientNetB0}
+    AVAILABLE = {'resnet': ResNet50V2, 'mobile': MobileNetV2, 'efficient': EfficientNetB0}
     
-    def __init__(self, num_classes: int, img_size: int,  pretrained: str, proj: int = 1000, defreeze: int = -1):
+    def __init__(
+        self, 
+        num_classes: int, 
+        img_size: int, 
+        pretrained: str, 
+        proj: int = 1000, 
+        defreeze: int = -1,
+        name: Optional[str] = None
+    ):
         """Image classifier model with pretrained weights.
 
         Args:
@@ -162,7 +170,7 @@ class PretrainedModel(Model):
             defreeze (int, optional): Number of layers to defreeze.. Defaults to -1.
         """
         assert pretrained in self.AVAILABLE.keys(), 'Pretrained model not available for this implementation'
-        super().__init__(name=pretrained)
+        super().__init__(name=name or pretrained)
         
         self.rescaling = layers.Rescaling(1.0 / 255)
         self.model = freeze(self.AVAILABLE[pretrained](weights='imagenet', include_top=False, input_shape=(img_size, img_size, 3)), defreeze)
