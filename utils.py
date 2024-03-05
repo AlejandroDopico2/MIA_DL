@@ -1,21 +1,36 @@
 import gc
-import tensorflow as tf
 from keras.backend import clear_session
 from keras.utils import image_dataset_from_directory
 from tensorflow.data import Dataset
 from keras.optimizers import Optimizer
-from keras import models
 from keras import Model
-from keras import layers
 from keras.callbacks import EarlyStopping, History, ModelCheckpoint, ReduceLROnPlateau
-from typing import List, Optional, Tuple, Dict, Union
+from typing import List, Tuple, Dict, Union
 import numpy as np
 import matplotlib.pyplot as plt
+from keras.layers import Layer 
+import plotly.graph_objects as go 
+from plotly.subplots import make_subplots
+import plotly.io as pio
+pio.renderers.default = "vscode"
+import plotly.express as px
+import pickle
+
 
 def reset():
     clear_session()
     gc.collect()
 
+def freeze(model: Layer, maintain: int) -> Layer:
+    if maintain == 0: # do not defreeze
+        layers = model.layers
+    elif maintain == -1: # maitain all 
+        return model
+    else:
+        layers = model.layers[:-maintain]
+    for layer in layers:
+        layer.trainable = False
+    return model 
 
 def load_data(
         base_dir: str, img_size: int = 128, batch_size: int = 64
@@ -41,41 +56,50 @@ def train_model(
     model: Model,
     train: Dataset,
     val: Dataset,
-    optimizer: Optimizer = 'adam',
+    path: str,
     epochs: int = 20,
     batch_size: int = 64,
     val_patience: int = 10, 
     lr_patience: int = 5, 
-    verbose: Union[str, int] = "auto",
-    path: Optional[str] = None,
-    name: str = "conv_net.keras",
+    verbose: Union[str, int] = "auto"
 ) -> History:
-
-    model.compile(optimizer, loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
     callbacks = [ 
         EarlyStopping(monitor="val_loss", mode="min", patience=val_patience),
         ReduceLROnPlateau('val_loss', factor=0.2, patience=lr_patience, min_delta=1e-5, min_lr=0)
     ]
     if path:
-        callbacks.append(ModelCheckpoint(f'{path}/{name}.keras', 'val_loss', save_best_only=True))
+        callbacks.append(ModelCheckpoint(f'{path}/{model.name}.keras', 'val_loss', save_best_only=True))
     
     history = model.fit(train, epochs=epochs, batch_size=batch_size, callbacks=callbacks, 
                                  verbose=verbose, validation_data=val)
-    
+    with open(f'{path}/history.pickle', 'wb') as writer:
+        pickle.dump(history.history, writer)
     return history
 
-def plot(history: Dict[str, np.ndarray], metric: str = "accuracy"):
-    train = history[metric]
-    plt.clf()
-    epochs = range(1, len(train) + 1)
 
-    plt.plot(epochs, train, "b-o", label="Training " + metric)
-    if "val_" + metric in history.keys():
-        validation = history[f"val_{metric}"]
-        plt.plot(epochs, validation, "r-o", label="Validation " + metric)
+def plot_history(history: Dict[str, np.ndarray], metrics: List[str] = ['loss'], ncols: int = 2, name: str = 'model'):
+    nrows = int(len(metrics)/ncols + 0.5)
+    fig = make_subplots(rows=nrows, cols=ncols, horizontal_spacing=0.05, vertical_spacing=0.05,
+                        subplot_titles=metrics)
+    epochs = np.arange(1, len(history['loss']) + 1)
+    colors = px.colors.qualitative.Plotly
+    args = lambda x: dict(x=epochs, mode='lines+markers', marker=dict(color=colors[x]), line=dict(color=colors[x]))
+    for i, metric in enumerate(metrics):
+        fig.add_trace(go.Scatter(y=history[metric], name='train', showlegend=(i==0), **args(0)), row=i//ncols+1, col=i%ncols+1)
+        fig.add_trace(go.Scatter(y=history[f'val_{metric}'], name=f'val', showlegend=(i==0), **args(1)), row=i//ncols+1, col=i%ncols+1)
+        fig.update_yaxes(title_text=metric)
+        fig.update_xaxes(title_text='epochs')
+    fig.update_layout(
+        template='seaborn', height=400*nrows, width=600*ncols, 
+        title=f'Training and validation of {name}', margin=dict(t=50, b=10, r=10, l=10)
+    )    
+    return fig
 
-    plt.title("Training and validation " + metric)
-    plt.xlabel("Epochs")
-    plt.ylabel(metric)
-    plt.legend()
-    plt.show()
+
+def number_params(model: Model) -> Tuple[int, int]:
+    trainable = np.sum([np.prod(v.get_shape()) for v in model.trainable_weights])
+    non_trainable = np.sum([np.prod(v.get_shape()) for v in model.non_trainable_weights])
+    return trainable, non_trainable
+
+def evaluate(models: List[Model], test: Dataset, batch_size: int) -> List[float]:
+    return [model.evaluate(test, batch_size=batch_size, verbose=False)[1] for  model in models]

@@ -1,12 +1,14 @@
 import tensorflow as tf
-from keras import layers, Model
+from keras.models import Model
+from keras import layers 
 from keras.applications import ResNet50V2, MobileNetV2, EfficientNetB0
 from layers import IdentityBlock, ConvolutionBlock, Inception
 from typing import List, Tuple
+from utils import freeze
 
 class SimpleModel(Model):
-    def __init__(self, num_classes: int):
-        super().__init__()
+    def __init__(self, num_classes: int, name: str = 'SimpleModel'):
+        super().__init__(name=name)
 
         self.rescaling = layers.Rescaling(1.0 / 255)
         self.conv1 = layers.Conv2D(32, kernel_size=3)
@@ -26,8 +28,8 @@ class SimpleModel(Model):
 
 
 class MidModel(Model):
-    def __init__(self, num_classes: int, kernel_size: int = 3, dropout: float = 0.25):
-        super().__init__()
+    def __init__(self, num_classes: int, kernel_size: int = 3, dropout: float = 0.25, name: str = 'MidModel'):
+        super().__init__(name=name)
 
         self.rescaling = layers.Rescaling(1.0 / 255)
         self.conv1 = layers.Conv2D(32, kernel_size, activation="relu")
@@ -65,8 +67,8 @@ class MidModel(Model):
         return self.output_layer(x)
 
 class CustomResNet(Model):
-    def __init__(self, num_classes: int, num_blocks: int = 4, filters_size: int = 64):
-        super(CustomResNet, self).__init__()
+    def __init__(self, num_classes: int, num_blocks: int = 4, filters_size: int = 64, name: str = 'ResNet'):
+        super(CustomResNet, self).__init__(name=name)
 
         self.rescaling = layers.Rescaling(1.0 / 255)
         self.zpad = layers.ZeroPadding2D(3)
@@ -103,8 +105,16 @@ class CustomResNet(Model):
         return self.output_layer(x)
 
 class InceptionModel(Model):
-    def __init__(self, num_classes: int, num_blocks: int, n_filters = List[Tuple[int]], kernel_size: int = 3, dropout: float = 0.2):
-        super(InceptionModel, self).__init__()
+    def __init__(
+        self, 
+        num_classes: int, 
+        num_blocks: int, 
+        n_filters = List[Tuple[int]], 
+        kernel_size: int = 3,
+        dropout: float = 0.2,
+        name: str = 'InceptionModel'
+    ):
+        super(InceptionModel, self).__init__(name=name)
 
         self.rescaling = layers.Rescaling(1.0 / 255)
     
@@ -126,8 +136,8 @@ class InceptionModel(Model):
         
         for i, (block, conv, bn) in enumerate(zip(self.inception_blocks, self.convolutional_blocks, self.batch_norm_layers)):
             x = block(x)
-            x = conv(x)
             x = bn(x, training = training)
+            x = conv(x)
 
             if i != len(self.inception_blocks)-1:
                 x = layers.MaxPool2D()(x)
@@ -139,7 +149,7 @@ class InceptionModel(Model):
         return self.output_layer(x)
 
 class PretrainedModel(Model):
-    AVAILABLE = {'resnet': ResNet50V2, 'mobilenet': MobileNetV2, 'efficientnet': EfficientNetB0}
+    AVAILABLE = {'ResNet50': ResNet50V2, 'MobileNet': MobileNetV2, 'EfficientNetB0': EfficientNetB0}
     
     def __init__(self, num_classes: int, img_size: int,  pretrained: str, proj: int = 1000, defreeze: int = -1):
         """Image classifier model with pretrained weights.
@@ -152,7 +162,7 @@ class PretrainedModel(Model):
             defreeze (int, optional): Number of layers to defreeze.. Defaults to -1.
         """
         assert pretrained in self.AVAILABLE.keys(), 'Pretrained model not available for this implementation'
-        super().__init__(name='PretrainedModel')
+        super().__init__(name=pretrained)
         
         self.rescaling = layers.Rescaling(1.0 / 255)
         self.model = freeze(self.AVAILABLE[pretrained](weights='imagenet', include_top=False, input_shape=(img_size, img_size, 3)), defreeze)

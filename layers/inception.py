@@ -21,6 +21,7 @@ class Inception(Layer):
             Conv2D(n_filters[3], 3, padding='same')
         ])
         self.concat = Concatenate(-1)
+        
 
     def call(self, x: tf.Tensor):
         b1 = self.block1(x)
