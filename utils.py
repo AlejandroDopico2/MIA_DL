@@ -24,7 +24,10 @@ def reset():
 def freeze(model: Layer, maintain: int) -> Layer:
     if maintain == 0: # do not defreeze
         layers = model.layers
+        model.trainable = False
+        return model
     elif maintain == -1: # maitain all 
+        model.trainable = True
         return model
     else:
         layers = model.layers[-maintain:]
