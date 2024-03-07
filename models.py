@@ -1,7 +1,7 @@
 import tensorflow as tf
 from keras.models import Model
 from keras import layers 
-from keras.applications import ResNet50V2, MobileNetV2, EfficientNetB0
+from keras.applications import ResNet50V2, MobileNetV2, Xception
 from layers import IdentityBlock, ConvolutionBlock, Inception
 from typing import List, Tuple, Optional
 from utils import freeze
@@ -149,7 +149,7 @@ class InceptionModel(Model):
         return self.output_layer(x)
 
 class PretrainedModel(Model):
-    AVAILABLE = {'resnet': ResNet50V2, 'mobile': MobileNetV2, 'efficient': EfficientNetB0}
+    AVAILABLE = {'resnet': ResNet50V2, 'mobile': MobileNetV2, 'xception': Xception}
     
     def __init__(
         self, 
