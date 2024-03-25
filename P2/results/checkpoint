@@ -1,0 +1,2 @@
+model_checkpoint_path: "walmart4"
+all_model_checkpoint_paths: "walmart4"
