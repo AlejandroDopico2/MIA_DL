@@ -3,32 +3,23 @@ from keras.models import Sequential, Model
 from keras.regularizers import Regularizer, L2
 from keras.optimizers import Optimizer, Adam
 from keras.callbacks import EarlyStopping, ModelCheckpoint
-from keras.metrics import Metric
+from keras.metrics import Metric, MeanAbsoluteError
+from keras import ops
 import numpy as np 
 import tensorflow as tf
 from data import WalmartDataset
+from typing import Optional
 
 
-class DenormalizedMAE(Metric):
+class DenormalizedMAE(MeanAbsoluteError):
     def __init__(self, std: float, name='dmae', **kwargs):
         super().__init__(name=name, **kwargs)
-        self.std = std 
-        self.value = self.add_weight(shape=(), initializer='zeros', name='value')
-        self.n = self.add_weight(shape=(), initializer='zeros', name='value')
+        self.std = std
     
     def update_state(self, y_true, y_pred, sample_weight=None):
-        y_true = tf.multiply(y_true, self.std)
-        y_pred = tf.multiply(y_pred, self.std)
-        result = tf.reduce_mean(tf.abs(tf.subtract(y_true, y_pred)))
-        self.value.assign_add(result)
-        self.n.assign_add(1)
+        return super().update_state(tf.scalar_mul(self.std, y_true), tf.scalar_mul(self.std, y_pred), sample_weight)
         
-    def result(self):
-        return self.value/self.n
-    
-    def reset_states(self):
-        self.value.assign(0)
-        self.n.assign(0)
+        
 
 class WalmartModel:
     def __init__(
@@ -36,10 +27,10 @@ class WalmartModel:
         seq_len: int,
         num_layers: int = 2, 
         hidden_size: int = 10,
-        dropout: float = 0.2,
+        dropout: float = 0.1,
         bidirectional: bool = True,
         activation: str = 'tanh',
-        regularizer: Regularizer = L2(1e-2)
+        regularizer: Optional[Regularizer] = None
     ):
         add_lstm = lambda enc: LSTM(hidden_size, activation, 
                                 return_sequences=enc,
@@ -71,17 +62,18 @@ class WalmartModel:
         optimizer: Optimizer = Adam(1e-4),
         batch_size: int = 50,
         epochs: int = 2000,
-        patience: int = 20
+        patience: int = 20,
+        verbose: int = 1
     ) -> Model:
         self.mean, self.std = train.mean, train.std 
         train_tf = train.to_tf(self.seq_len, train.mean, train.std, batch_size, True)
         dev_tf = dev.to_tf(self.seq_len, train.mean, train.std, batch_size)
-        self.model.compile(optimizer, 'mse', metrics=[DenormalizedMAE(train.target_std)])
+        self.model.compile(optimizer, 'mse', metrics=[MeanAbsoluteError(name='mae'), DenormalizedMAE(train.target_std)])
         callbacks = [
-            EarlyStopping(monitor='val_dmae', patience=patience, mode='min', verbose=0),
-            ModelCheckpoint(path, monitor='val_dmae', mode='min', save_best_only=True, save_weights_only=True, verbose=0)
+            EarlyStopping(monitor='val_mae', patience=patience, mode='min', verbose=1),
+            ModelCheckpoint(path, monitor='val_mae', mode='min', save_best_only=True, save_weights_only=True, verbose=0)
         ]
-        self.model.fit(train_tf, epochs=epochs, validation_data=dev_tf, callbacks=callbacks)
+        self.model.fit(train_tf, epochs=epochs, validation_data=dev_tf, callbacks=callbacks, verbose=verbose)
         self.model.load_weights(path)
         return self.model 
     

@@ -29,7 +29,7 @@ class StoreInstance:
             ) 
             for i in range(len(self)-seq_len)
         ])
-        return np.stack(inputs), np.stack(targets)
+        return np.stack(inputs).astype(np.float32), np.stack(targets).astype(np.float32)
         
         
 class WalmartDataset:
@@ -42,13 +42,12 @@ class WalmartDataset:
         self.stores = stores 
         self.dates = dates
         
-    def split(self, pval: float, ptest: float, shuffle: bool = True) -> Tuple[WalmartDataset, WalmartDataset, WalmartDataset]:
+    def split(self, ptest: float, shuffle: bool = True, seed: int = 123) -> Tuple[WalmartDataset, WalmartDataset]:
         if shuffle:
+            random.seed(seed)
             random.shuffle(self.stores)
-        nval = int(len(self.stores)*pval)
         ntest = int(len(self.stores)*ptest)
-        return WalmartDataset(self.stores[(ntest+nval):], self.dates), \
-            WalmartDataset(self.stores[ntest:(ntest+nval)], self.dates), \
+        return WalmartDataset(self.stores[ntest:], self.dates), \
             WalmartDataset(self.stores[:ntest], self.dates)
     
     @property 
