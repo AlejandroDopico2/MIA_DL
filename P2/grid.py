@@ -25,7 +25,7 @@ train, val, test = data.split(VAL_RATIO, TEST_RATIO)
 if __name__ == '__main__':
     
     grid = OrderedDict(
-        regularizer = [L1(1e-3), L2(1e-3), L1L2(1e-3)],
+        regularizer = [L1(1e-3), L2(1e-3), L1L2(1e-4)],
         initializer=['random_normal', 'glorot_uniform'],
         activation=['tanh', 'relu']
     )
@@ -38,10 +38,12 @@ if __name__ == '__main__':
 
     df = pd.DataFrame(columns=['train', 'val', 'test'], index=pd.MultiIndex.from_product(applydeep(grid.values(), str)))
     for i, params in enumerate(product(*grid.values())):
+        if i < 5:
+            continue 
         params = dict(zip(grid.keys(), params))
         model = WalmartModel(seq_len=3, base_layer=GRU, num_encoder_layers=3, num_decoder_layers=2,  bidirectional=False, dropout=0.1,**params)
-        model.train(train, test, f'results/walmart.weights.h5', Adam(1e-4), batch_size=BATCH_SIZE)
+        model.train(train, test, f'results/walmart3.weights.h5', Adam(1e-3), batch_size=BATCH_SIZE)
         (_, train_mae, _), (_, val_mae, _), (_, test_mae, _) = map(model.evaluate, (train, val, test))
         df.loc[tuple(map(str, params.values()))] = [train_mae, val_mae, test_mae]
-        df.to_csv('grid.csv')
+        df.to_csv('grid3.csv')
     df.index.names = grid.keys()

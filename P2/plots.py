@@ -11,7 +11,10 @@ import numpy as np
 from typing import List 
 from model import WalmartModel
 
-
+# L1,random_normal,tanh,97176.0390625,160986.875,65295.44921875
+# L1,random_normal,relu,100092.359375,158176.21875,70685.21875
+# L1,glorot_uniform,tanh,95431.453125,155389.28125,65046.06640625
+# L1,glorot_uniform,relu,131795.890625,179003.96875,103291.8671875
 
 
 def plot_series(
