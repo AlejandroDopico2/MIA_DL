@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import plotly.express as px 
 from data import WalmartDataset
 import numpy as np 
-from typing import List 
+from typing import List, Tuple
 
 
 class DenormalizedMAE(Metric):
@@ -25,6 +25,14 @@ class DenormalizedMAE(Metric):
         
     def result(self):
         return self.value
+
+
+def normalize(*sets: List[Tuple[np.ndarray, np.ndarray]]):
+    x, y = sets[0]
+    mean_inputs, std_inputs = np.mean(x, 0), np.std(y)
+    mean_targets, std_targets = np.mean(y), np.std(y)
+    return [((x - mean_inputs)/std_inputs, (y - mean_targets)/std_targets) for x, y in sets], \
+        ((mean_inputs, std_inputs), (mean_targets, std_targets))
 
 def train_walmart(
         model: Model, 
