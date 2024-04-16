@@ -60,7 +60,7 @@ class AmazonDataset:
             max_tokens=self.max_features,
             standardize="lower_and_strip_punctuation",
             split="whitespace",
-            output_mode="int",
+            output_mode='int',
             output_sequence_length=self.sequence_length,
         )
 
@@ -73,8 +73,7 @@ class AmazonDataset:
 
         if self.max_features is None:
             self.max_features = precLayer.vocabulary_size()
-
-        return x_train_int, x_test_int
+        return tf.cast(x_train_int, tf.int32), tf.cast(x_test_int, tf.int32)
 
     def split(self, input_data, labels, validation_split=0.2):
         # Shuffle the indices
@@ -95,7 +94,7 @@ class AmazonDataset:
         train_labels = tf.gather(labels, train_indices)
         val_labels = tf.gather(labels, val_indices)
 
-        return train_input, val_input, train_labels, val_labels
+        return tuple(map(lambda x: tf.cast(x, tf.int32), (train_input, val_input, train_labels, val_labels)))
 
     @classmethod
     def read_data(cls, lines: List[str]):

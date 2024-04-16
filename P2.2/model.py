@@ -1,5 +1,6 @@
 from keras.models import Sequential 
-from keras.layers import GRU, LSTM, Bidirectional, Dense, Dropout, Embedding, SimpleRNN, Layer
+from keras.layers import *
+from keras_nlp.layers import TransformerEncoder
 from keras.optimizers import Optimizer, Adam
 from keras.regularizers import Regularizer, L1, L2, L1L2
 from typing import Union, List, Optional, Callable, Tuple 
@@ -18,6 +19,7 @@ class AmazonReviewsModel:
         num_recurrent_layers: int = 2,
         recurrent_dims: Optional[Union[List[int], int]] = None,
         ffn_dims: List[int] = [],
+        num_transformers: int = 0,
         bidirectional: bool = False,
         dropout: float = 0.0,
         activation: str = 'relu',
@@ -25,6 +27,7 @@ class AmazonReviewsModel:
         initializer: str = 'glorot_uniform',
         name: str = 'AmazonReviewsModel'
     ):
+        self.name = name
         if recurrent_dims is None:
             recurrent_dims = embed_size
         if isinstance(recurrent_dims, int):
@@ -38,6 +41,9 @@ class AmazonReviewsModel:
         
         self.model = Sequential([
             Embedding(input_dim=vocab_size, output_dim=embed_size, mask_zero=True),
+            
+            # transformer layers
+            *[TransformerEncoder(embed_size, num_heads=4) for _ in range(num_transformers)],
             
             # recurrent encoder
             *[add_layer(dim, kernel_regularizer=regularizer, kernel_initializer=initializer, return_sequences=True) for dim in recurrent_dims[:-1]],
