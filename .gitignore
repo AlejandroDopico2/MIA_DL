@@ -161,6 +161,8 @@ cython_debug/
 
 animals/
 archive.zip
-*results/*
+*results*
 *AmazonDataset*
 *.DS_Store
+*grid*
+*weights.h5
