@@ -162,5 +162,5 @@ cython_debug/
 animals/
 archive.zip
 *results/*
-
+*AmazonDataset*
 *.DS_Store
