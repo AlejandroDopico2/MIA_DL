@@ -1,8 +1,8 @@
 from keras.models import Sequential 
 from keras.layers import *
 from keras_nlp.layers import TransformerEncoder
-from keras.optimizers import Optimizer, Adam
-from keras.regularizers import Regularizer, L1, L2, L1L2
+from keras.optimizers import Adam
+from keras.regularizers import Regularizer
 from typing import Union, List, Optional, Callable, Tuple 
 import plotly.graph_objects as go
 from data import AmazonDataset

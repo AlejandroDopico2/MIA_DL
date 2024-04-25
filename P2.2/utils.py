@@ -1,52 +1,9 @@
-from typing import Dict, List, Tuple
-
+from typing import Dict, List
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import plotly.io as pio
-from keras.callbacks import EarlyStopping, History, ModelCheckpoint
-from keras.models import Model
-from keras.optimizers import Adam, Optimizer
 from plotly.subplots import make_subplots
 
-from data import AmazonDataset
-
-def train_recurrent_model(
-    model: Model,
-    path: str,
-    dataset: AmazonDataset,
-    epochs: int,
-    batch_size: int,
-    patience: int,
-    optimizer: Optimizer = Adam,
-) -> Tuple[Model, History]:
-
-    model.compile(optimizer, loss="binary_crossentropy", metrics=["accuracy"])
-
-    callbacks = [
-        EarlyStopping(monitor="val_loss", patience=patience, mode="min", verbose=0),
-        ModelCheckpoint(
-            path,
-            monitor="val_loss",
-            mode="min",
-            save_best_only=True,
-            save_weights_only=True,
-            verbose=0,
-        ),
-    ]
-
-    history = model.fit(
-        dataset.X_train,
-        dataset.y_train,
-        epochs=epochs,
-        batch_size=batch_size,
-        validation_data=(dataset.X_val, dataset.y_val),
-        callbacks=callbacks,
-    )
-
-    model.load_weights(path)
-
-    return model, history
 
 
 def plot_history(
