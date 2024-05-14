@@ -166,3 +166,7 @@ archive.zip
 *.DS_Store
 *grid*
 *weights.h5
+*archive*
+*LAB_GAN_code*
+*U6Code*
+*.venv*
