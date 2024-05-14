@@ -9,10 +9,10 @@ from argparse import ArgumentParser
 if __name__ == '__main__':
     
     parser = ArgumentParser(description='CelebA generation')
-    parser.add_argument('model', type=str, required=True, choices=['vae', 'wgan'], help='Model to execute')
-    parser.add_argument('-p', '--path', required=True, type=str, help='Path to store the model and predictions')
-    parser.add_argument('-h', '--hidden-size', type=int, default=200, help='Hidden size')
-    parser.add_argument('--batch-size', type=int, default=10, help='Batch size')
+    parser.add_argument('model', type=str, choices=['vae', 'wgan'], help='Model to execute')
+    parser.add_argument('-p', '--path', default='results/model', type=str, help='Path to store the model and predictions')
+    parser.add_argument('--hidden-size', type=int, default=200, help='Hidden size')
+    parser.add_argument('--batch-size', type=int, default=20, help='Batch size')
     parser.add_argument('--epochs', type=int, default=10, help='Number of training epochs')
     
     args = parser.parse_args()
@@ -25,7 +25,7 @@ if __name__ == '__main__':
         wgan = WGAN(CelebADataset.IMG_SIZE, hidden_size = args.hidden_size, critic_steps=3, gp_weight=10)
         gopt = Adam(2e-4, beta_1=0.5, beta_2=0.999)
         copt = Adam(2e-4, beta_1=0.5, beta_2=0.999)
-        wgan.train(train, val, test, args.path, g_optimizer=gopt, c_optimizer=copt, epochs=args.epochs, batch_size=args.batch_size)
+        wgan.train(train, test, args.path, g_optimizer=gopt, c_optimizer=copt, epochs=args.epochs, batch_size=args.batch_size)
     else:
         raise NotImplementedError
         
