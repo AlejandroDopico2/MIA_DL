@@ -26,13 +26,14 @@ from keras.layers import (
 from keras.models import Model
 from keras.optimizers.legacy import Adam, Optimizer
 from PIL import Image
-from utils import FID, SaveImagesCallback
+from utils import SaveImagesCallback, FID
 
 
 class VariationalAutoEncoder:
     LOSS_FACTOR = 1000
     NORM = lambda _, x: x / 255
     DENORM = lambda _, x: np.uint8(x * 255)
+    INCEPTION_SIZE = (299, 299, 3)
 
     def __init__(
         self,
@@ -42,6 +43,7 @@ class VariationalAutoEncoder:
         strides: List[int],
         filters: List[int],
     ):
+        self.hidden_size = hidden_size
 
         # ---------------------- ENCODER ----------------------
         encoder_input = Input(shape=img_size, name="encoder-input")
@@ -103,6 +105,7 @@ class VariationalAutoEncoder:
             return self.LOSS_FACTOR * r_loss(y_true, y_pred) + kl_loss(y_true, y_pred)
 
         self.METRICS = [r_loss, kl_loss]
+        
         self.LOSS = total_loss
 
     def train(
@@ -115,6 +118,7 @@ class VariationalAutoEncoder:
         epochs: int = 10,
         train_patience: int = 10,
         dev_patience: int = 5,
+        steps_per_epoch: int = 1500,
         optimizer: Optimizer = Adam(1e-4),
     ) -> Dict[str, List[float]]:
         self.model.compile(optimizer=optimizer, loss=self.LOSS, metrics=self.METRICS)
@@ -125,19 +129,14 @@ class VariationalAutoEncoder:
         val_tf = val.to_tf(self.NORM, batch_size, targets=True)
 
         callbacks = [
-            ModelCheckpoint(
-                f"{path}/model.h5",
-                save_weights_only=True,
-                save_best_only=True,
-                verbose=0,
-            ),
+            SaveImagesCallback(self.model, val, path, self.NORM, self.DENORM, self.hidden_size, save_frequency=1, from_latent=False),
+            FID(self.model, val, self.hidden_size, self.NORM, self.DENORM),
             EarlyStopping("loss", patience=train_patience),
             EarlyStopping("val_loss", patience=dev_patience),
-            SaveImagesCallback(self.model, val_tf, path, save_frequency=1),
+            ModelCheckpoint(f"{path}/model.h5", 'fid', save_weights_only=True, save_best_only=True, verbose=0),
         ]
-        history = self.model.fit(
-            train_tf, validation_data=val_tf, epochs=epochs, callbacks=callbacks
-        ).history
+        history = self.model.fit(train_tf, validation_data=val_tf, epochs=epochs, callbacks=callbacks, 
+                                 steps_per_epoch=steps_per_epoch, validation_steps=steps_per_epoch)
         with open(f"{path}/history.pkl", "wb") as f:
             pickle.dump(history, f)
         self.model.load_weights(f"{path}/model.h5")
@@ -158,19 +157,6 @@ class VariationalAutoEncoder:
             output = self.DENORM(self.model.predict(input))
             for j in range(output.shape[0]):
                 img = Image.fromarray(output[j])
-            img.save(f"{out}/{files[j]}")
+                img.save(f"{out}/{files[j]}")
             inputs.append(input)
             outputs.append(output)
-        return FID(CelebADataset.IMG_SIZE)(
-            np.concatenate(inputs, 0), np.concatenate(outputs, 0)
-        )
-
-    def evaluate(self, data: CelebADataset, batch_size: int = 10) -> float:
-        inputs, outputs = [], []
-        for _, input in data.stream(self.NORM, batch_size):
-            output = self.DENORM(self.model.predict(inputs))
-            outputs.append(output)
-            inputs.append(input)
-        return FID(CelebADataset.IMG_SIZE)(
-            np.concatenate(inputs, 0), np.concatenate(outputs, 0)
-        )
