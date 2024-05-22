@@ -148,6 +148,7 @@ class WGAN:
                                  ).history
         self.model.load_weights(f"{path}/checkpoint/checkpoint.ckpt")
         self.predict(test, f"{path}/preds/", batch_size)
+        print(history)
         return history
 
     def predict(
