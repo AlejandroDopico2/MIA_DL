@@ -24,8 +24,11 @@ from tensorflow.keras.layers import (
     Input,
     LeakyReLU,
     Reshape,
-    Activation
+    Activation,
+    Dense,
+    Lambda 
 )
+from tensorflow.keras import Sequential 
 from tensorflow.keras.metrics import Mean
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam, Optimizer
@@ -34,6 +37,7 @@ from keras.applications.inception_v3 import InceptionV3, preprocess_input
 from skimage.transform import resize
 from numpy import cov, iscomplexobj, trace
 from scipy.linalg import sqrtm
+from keras import backend as K
 from utils import SaveImagesCallback, FID
 from keras.activations import tanh
 
@@ -48,10 +52,7 @@ class LossHistory(Callback):
         self.history["g_acc"].append(logs["g_acc"])
 
         
-class WGAN:
-    NORM = lambda _, x: (tf.cast(x, tf.float32) - 127.5) / 127.5
-    DENORM = lambda _, x: np.uint8(x * 127.5 + 127.5)
-    INCEPTION_SIZE = (299, 299, 3)
+class GAN(Model):
 
     def __init__(
         self,
@@ -61,6 +62,7 @@ class WGAN:
         gp_weight: float,
     ):
         self.hidden_size = hidden_size
+        
         # discriminator
         critic_input = Input(shape=img_size)
         x = Conv2D(32, kernel_size=4, strides=2, padding="same")(critic_input)
@@ -80,9 +82,80 @@ class WGAN:
         critic_output = Flatten()(x)
 
         critic = Model(critic_input, critic_output, name="discriminator")
+        
+        def sampling(args):
+            mean_mu, log_var = args
+            epsilon = K.random_normal(shape=K.shape(mean_mu), mean=0.0, stddev=1.0)
+            return mean_mu + K.exp(log_var / 2) * epsilon
 
-        # generator
-        generator_input = Input(shape=(hidden_size,))
+        # encoder 
+        encoder_input = Input(shape=img_size, name='encoder-input')
+        conv1 = Sequential([
+            Conv2D(64, kernel_size=4, strides=2, padding='same', use_bias=False),
+            BatchNormalization(momentum=0.9), LeakyReLU(0.2)]
+        )(encoder_input)
+        conv2 = Sequential([
+            Conv2D(128, kernel_size=4, strides=2, padding='same', use_bias=False),
+            BatchNormalization(momentum=0.9), LeakyReLU(0.2)
+        ])(conv1)
+        conv3 = Sequential([
+            Conv2D(256, kernel_size=4, strides=2, padding='same', use_bias=False),
+            BatchNormalization(momentum=0.9), LeakyReLU(0.2)
+        ])(conv2)
+        conv4 = Sequential([
+            Conv2D(512, kernel_size=4, strides=2, padding='same', use_bias=False),
+            BatchNormalization(momentum=0.9), LeakyReLU(0.2)
+        ])(conv3)
+        latent = Sequential([
+            Conv2D(1024, kernel_size=4, strides=2, padding='same', use_bias=False),
+            BatchNormalization(momentum=0.9), LeakyReLU(0.2),
+            Flatten()
+        ])(conv4)
+        self.mean = Dense(hidden_size, name='mean')(latent)
+        self.logvar = Dense(hidden_size, name='log-var')(latent)
+        encoder_output = Lambda(sampling, name="encoder-output")([self.mean, self.logvar])
+        self.encoder = Model(encoder_input, encoder_output)
+        
+        # decoder 
+        decoder_input = Input(shape=(hidden_size, ), name='decoder-input')
+        deconv4 = Sequential([
+            Reshape(shape=(1, 1, hidden_size)),
+            Conv2DTranspose(512, kernel_size=4, strides=2, padding='same', use_bias=False),
+            BatchNormalization(momentum=0.9), LeakyReLU(0.2),
+        ])(decoder_input)
+        deconv3 = Sequential([
+            Conv2DTranspose(256, kernel_size=4, strides=2, padding='same', use_bias=False),
+            BatchNormalization(momentum=0.9), LeakyReLU(0.2),
+        ])(deconv4)
+        deconv2 = Sequential([
+            Conv2DTranspose(128, kernel_size=4, strides=2, padding='same', use_bias=False),
+            BatchNormalization(momentum=0.9), LeakyReLU(0.2),
+        ])(deconv3)
+        deconv1 = Sequential([
+            Conv2DTranspose(64, kernel_size=4, strides=2, padding='same', use_bias=False),
+            BatchNormalization(momentum=0.9), LeakyReLU(0.2),
+        ])(deconv2)
+        
+        
+        x =(encoder_input)
+        x = )(x)
+        x = LeakyReLU(0.2)(x)
+        x = Conv2D(128, kernel_size=4, strides=2, padding='same', use_bias=False)(x)
+        x = BatchNormalization(momentum=0.9)(x)
+        x = LeakyReLU(0.2)(x)
+        x = Conv2D(256, kernel_size=4, strides=2, padding='same', use_bias=False)(x)
+        x = BatchNormalization(momentum=0.9)(x)
+        x = LeakyReLU(0.2)(x)
+        x = Conv2D(512, kernel_size=4, strides=2, padding='same', use_bias=False)(x)
+        x = BatchNormalization(momentum=0.9)(x)
+        x = LeakyReLU(0.2)(x)
+        x = Conv2D(1024, kernel_size=4, strides=2, padding='same', use_bias=False)(x)
+        x = BatchNormalization(momentum=0.9)(x)
+        x = LeakyReLU(0.2)(x)
+        x = Flatten(x)
+        
+        encoder_output = 
+        
         x = Reshape((1, 1, hidden_size))(generator_input)
         x = Conv2DTranspose(
             1024, kernel_size=4, strides=1, padding="valid", use_bias=False

@@ -47,7 +47,7 @@ class FID(Callback):
         stream = val.stream(None, batch_size=batch_size)
         for _ in tqdm(range(n), desc='inception', total=n, leave=False):
             real = self.preprocess(next(stream)[1])
-            act = self.fmodel.predict(real)
+            act = self.fmodel.predict(real, verbose=0)
             mu += act.mean(axis=0)
             sigma += cov(act, rowvar=False)
         self.mu = mu/n
@@ -59,8 +59,8 @@ class FID(Callback):
         mu, sigma, n = 0, 0, self.n_samples//self.batch_size
         for _ in tqdm(range(n), desc='val', total=n, leave=False):
             latent = tf.random.normal(shape=(self.batch_size, self.hidden_size))
-            fake = self.preprocess(self.model.predict(latent))
-            act = self.fmodel.predict(fake)
+            fake = self.preprocess(self.model.predict(latent, verbose=0))
+            act = self.fmodel.predict(fake, verbose=0)
             mu += act.mean(axis=0)
             sigma += cov(act, rowvar=False)
         mu /= n
@@ -112,9 +112,9 @@ class SaveImagesCallback(Callback):
         
         if self.from_latent:
             latent = tf.random.normal(shape=(len(self.files), self.hidden_size))
-            output_batch = self.DENORM(self.model.predict(latent))
+            output_batch = self.DENORM(self.model.predict(latent, verbose=0))
         else:
-            output_batch = self.DENORM(self.model.predict(self.data))
+            output_batch = self.DENORM(self.model.predict(self.data, verbose=0))
             
         for i, file in enumerate(self.files):
             img = Image.fromarray(output_batch[i])

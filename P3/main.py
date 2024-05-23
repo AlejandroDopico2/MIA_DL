@@ -27,6 +27,7 @@ if __name__ == "__main__":
         help="Boolean flag for dilation instead of stride in VAE",
     )
     parser.add_argument("--batch-size", type=int, default=20, help="Batch size")
+    parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
     parser.add_argument(
         "--epochs", type=int, default=100, help="Number of training epochs"
     )
@@ -67,7 +68,7 @@ if __name__ == "__main__":
             CelebADataset.IMG_SIZE,
             hidden_size=args.hidden_size,
             critic_steps=3,
-            gp_weight=2,
+            gp_weight=10,
         )
         gopt = Adam(2e-4, beta_1=0.5, beta_2=0.999)
         copt = Adam(2e-4, beta_1=0.5, beta_2=0.999)
