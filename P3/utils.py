@@ -1,80 +1,126 @@
 import os
-from typing import Dict, List, Tuple, Union
-
+from typing import Dict, List, Tuple, Union, Callable, Optional
+import tensorflow as tf
 import numpy as np
 import plotly.graph_objects as go
 from keras.applications.inception_v3 import InceptionV3, preprocess_input
-from keras.callbacks import Callback
+from keras.callbacks import Callback, ModelCheckpoint
 from numpy import cov, iscomplexobj, trace
 from PIL import Image
 from scipy.linalg import sqrtm
+from keras.models import Model 
 from skimage.transform import resize
+from data import CelebADataset
+from tensorflow.data import Dataset 
+from keras.metrics import Metric 
 
+from tqdm import tqdm 
 
-class FID:
-    def __init__(self, img_size: Tuple[int, int, int] = (299, 299, 3)):
-        self.model = InceptionV3(include_top=False, pooling="avg", input_shape=img_size)
-        self.img_size = img_size
+    
+    
+class FID(Callback):
+    INCEPTION_SIZE = (299, 299, 3)
+    
+    def __init__(
+            self, 
+            model: Model,
+            val: CelebADataset,
+            hidden_size: int, 
+            NORM: Callable,
+            DENORM: Callable, 
+            batch_size: int = 10,
+            n_samples: int = 500,
+            **kwargs
+        ):
+        super().__init__(**kwargs)
+        self.model = model 
+        self.hidden_size = hidden_size
+        self.NORM = NORM 
+        self.DENORM = DENORM
+        self.fmodel = InceptionV3(include_top=False, pooling='avg', input_shape=self.INCEPTION_SIZE)
+        self.n_samples = n_samples
+        self.batch_size = batch_size
+        self.best, self.best_epoch = np.Inf, 0
 
-    def __call__(self, imgs1: np.ndarray, imgs2: np.ndarray) -> float:
-        # scale images
-        imgs1, imgs2 = map(self.preprocess, (imgs1, imgs2))
+        # precompute mean and standard deviation from the ground truth 
+        mu, sigma, n = 0, 0, n_samples//batch_size
+        stream = val.stream(None, batch_size=batch_size)
+        for _ in tqdm(range(n), desc='inception', total=n, leave=False):
+            real = self.preprocess(next(stream)[1])
+            act = self.fmodel.predict(real)
+            mu += act.mean(axis=0)
+            sigma += cov(act, rowvar=False)
+        self.mu = mu/n
+        self.sigma = sigma/n
+        self.step = 0 
 
-        act1 = self.model.predict(imgs1, verbose=0)
-        act2 = self.model.predict(imgs2, verbose=0)
-        mu1, sigma1 = act1.mean(axis=0), cov(act1, rowvar=False)
-        mu2, sigma2 = act2.mean(axis=0), cov(act2, rowvar=False)
-        ssdiff = np.sum((mu1 - mu2) ** 2.0)
-        covmean = sqrtm(sigma1.dot(sigma2))
+        
+    def on_epoch_end(self, epoch, logs):
+        mu, sigma, n = 0, 0, self.n_samples//self.batch_size
+        for _ in tqdm(range(n), desc='val', total=n, leave=False):
+            latent = tf.random.normal(shape=(self.batch_size, self.hidden_size))
+            fake = self.preprocess(self.model.predict(latent))
+            act = self.fmodel.predict(fake)
+            mu += act.mean(axis=0)
+            sigma += cov(act, rowvar=False)
+        mu /= n
+        sigma /= n 
+        ssdiff = np.sum((self.mu - mu) ** 2.0)
+        covmean = sqrtm(self.sigma.dot(sigma))
         if iscomplexobj(covmean):
             covmean = covmean.real
-        fid = ssdiff + trace(sigma1 + sigma2 - 2.0 * covmean)
-        return fid
+        fid = ssdiff + trace(self.sigma + sigma - 2.0 * covmean)
+        logs['fid'] = fid 
 
     def preprocess(self, imgs: np.ndarray) -> np.ndarray:
         return np.stack(
-            [preprocess_input(resize(img, self.img_size, 0)) for img in imgs], 0
+            [preprocess_input(resize(img, self.INCEPTION_SIZE, 0)) for img in self.DENORM(imgs)], 0
         )
 
 
 class SaveImagesCallback(Callback):
-
-    NORM = lambda _, x: x / 255
-    DENORM = lambda _, x: np.uint8(x * 255)
-
     def __init__(
         self,
         model,
-        validation_data,
-        output_folder,
-        batch_size=20,
-        save_frequency=5,
-        batches_to_get=1,
+        val: CelebADataset,
+        output_folder: str,
+        NORM: Callable, 
+        DENORM: Callable,
+        hidden_size: int, 
+        save_frequency: int = 5,
+        n_samples: int = 100,
+        from_latent: bool = False 
     ):
         super(SaveImagesCallback, self).__init__()
         self.model = model
-        self.validation_data = validation_data.take(batches_to_get)
+        self.files, self.data = next(val.stream(NORM, n_samples))
         self.output_folder = output_folder + "/val_pred"
         self.save_frequency = save_frequency
-        self.batch_size = batch_size
+        self.DENORM = DENORM
+        self.from_latent = from_latent
+        self.hidden_size = hidden_size
 
         if not os.path.exists(self.output_folder):
             os.makedirs(self.output_folder)
 
     def on_epoch_end(self, epoch, logs=None):
-
         if epoch % self.save_frequency != 0:
             return
-
         output_folder = f"{self.output_folder}/epoch_{epoch}"
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
-
-        output_batch = self.DENORM(self.model.predict(self.validation_data))
-        for i in range(output_batch.shape[0]):
+        
+        if self.from_latent:
+            latent = tf.random.normal(shape=(len(self.files), self.hidden_size))
+            output_batch = self.DENORM(self.model.predict(latent))
+        else:
+            output_batch = self.DENORM(self.model.predict(self.data))
+            
+        for i, file in enumerate(self.files):
             img = Image.fromarray(output_batch[i])
-            img.save(f"{output_folder}/image_{i}.jpg")
+            img.save(f"{output_folder}/{file}.jpg")
         print(f"Saved validation predictions for epoch {epoch + 1}.")
+
 
 
 def plot_history(

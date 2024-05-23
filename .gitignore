@@ -170,3 +170,6 @@ archive.zip
 *code*
 *U6Code*
 *.venv*
+*.jpg
+*.png
+*.ckpt

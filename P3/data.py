@@ -1,5 +1,5 @@
 import os
-from typing import Callable, Iterable, List, Tuple
+from typing import Callable, Iterable, List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -17,6 +17,9 @@ class CelebADataset:
     def __init__(self, partition: str):
         assert partition in PARTITIONS, f"Partition {partition} not available"
         self.partition = partition
+        
+    def __len__(self) -> int:
+        return len(os.listdir(f'{self.FOLDER}/{self.partition}'))
 
     def to_tf(
         self,
@@ -36,13 +39,13 @@ class CelebADataset:
             seed=seed,
             interpolation="bilinear",
         )
-        df = df.map(norm)
+        df = df.repeat().map(norm)
         if targets:
             df = Dataset.zip(df, df)
         return df
 
     def stream(
-        self, norm: Callable, batch_size: int
+        self, norm: Optional[Callable], batch_size: int
     ) -> Iterable[Tuple[List[str], np.ndarray]]:
         files = os.listdir(f"{self.FOLDER}/{self.partition}/")
         for i in range(0, len(files), batch_size):
@@ -51,7 +54,7 @@ class CelebADataset:
                 img = Image.open(f"{self.FOLDER}/{self.partition}/{file}")
                 img = img.resize(self.IMG_SIZE[:2])
                 img = np.array(img)
-                batch.append(norm(img))
+                batch.append(norm(img) if norm is not None else img)
             yield files[i : (i + batch_size)], np.stack(batch)
 
 
