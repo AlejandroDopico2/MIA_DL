@@ -26,7 +26,7 @@ from keras.layers import (
 from keras.models import Model
 from keras.optimizers.legacy import Adam, Optimizer
 from PIL import Image
-from utils import SaveImagesCallback, FID
+from utils import FID, SaveImagesCallback
 
 
 class VariationalAutoEncoder:
@@ -52,7 +52,9 @@ class VariationalAutoEncoder:
         shapes = [img_size]
         for i, (n, k, s) in enumerate(zip(filters, kernels, strides)):
             if dilation:
-                x = Conv2D(n, k, dilation_rate=s, padding="same", name=f"encoder-conv-{i}")(x)
+                x = Conv2D(
+                    n, k, dilation_rate=s, padding="same", name=f"encoder-conv-{i}"
+                )(x)
             else:
                 x = Conv2D(n, k, strides=s, padding="same", name=f"encoder-conv-{i}")(x)
             x = LeakyReLU()(x)
@@ -114,7 +116,7 @@ class VariationalAutoEncoder:
             return self.LOSS_FACTOR * r_loss(y_true, y_pred) + kl_loss(y_true, y_pred)
 
         self.METRICS = [r_loss, kl_loss]
-        
+
         self.LOSS = total_loss
 
     def train(
@@ -138,14 +140,35 @@ class VariationalAutoEncoder:
         val_tf = val.to_tf(self.NORM, batch_size, targets=True)
 
         callbacks = [
-            SaveImagesCallback(self.model, val, path, self.NORM, self.DENORM, self.hidden_size, save_frequency=1, from_latent=False),
+            SaveImagesCallback(
+                self.model,
+                val,
+                path,
+                self.NORM,
+                self.DENORM,
+                self.hidden_size,
+                save_frequency=1,
+                from_latent=False,
+            ),
             FID(self.model, val, self.hidden_size, self.NORM, self.DENORM),
             EarlyStopping("loss", patience=train_patience),
             EarlyStopping("val_loss", patience=dev_patience),
-            ModelCheckpoint(f"{path}/model.h5", 'fid', save_weights_only=True, save_best_only=True, verbose=0),
+            ModelCheckpoint(
+                f"{path}/model.h5",
+                "fid",
+                save_weights_only=True,
+                save_best_only=True,
+                verbose=0,
+            ),
         ]
-        history = self.model.fit(train_tf, validation_data=val_tf, epochs=epochs, callbacks=callbacks, 
-                                 steps_per_epoch=steps_per_epoch, validation_steps=steps_per_epoch)
+        history = self.model.fit(
+            train_tf,
+            validation_data=val_tf,
+            epochs=epochs,
+            callbacks=callbacks,
+            steps_per_epoch=steps_per_epoch,
+            validation_steps=steps_per_epoch,
+        )
         with open(f"{path}/history.pkl", "wb") as f:
             pickle.dump(history, f)
         self.model.load_weights(f"{path}/model.h5")

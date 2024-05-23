@@ -20,12 +20,19 @@ if __name__ == "__main__":
         help="Path to store the model and predictions",
     )
     parser.add_argument("--hidden-size", type=int, default=200, help="Hidden size")
-    parser.add_argument("--dilation", type=bool, default=False, help="Boolean flag for dilation instead of stride in VAE")
+    parser.add_argument(
+        "--dilation",
+        type=bool,
+        default=False,
+        help="Boolean flag for dilation instead of stride in VAE",
+    )
     parser.add_argument("--batch-size", type=int, default=20, help="Batch size")
     parser.add_argument(
         "--epochs", type=int, default=100, help="Number of training epochs"
     )
-    parser.add_argument('--steps', type=int, default=1500, help='Number of steps per epoch')
+    parser.add_argument(
+        "--steps", type=int, default=1500, help="Number of steps per epoch"
+    )
 
     args = parser.parse_args()
     train, val, test = map(CelebADataset, ("train", "val", "test"))
@@ -43,7 +50,7 @@ if __name__ == "__main__":
             filters=[16, 32, 32, 32],
             kernels=[3, 3, 3, 3],
             strides=[2, 2, 2, 2],
-            dilation=args.dilation
+            dilation=args.dilation,
         )
         vae.train(
             train,
@@ -53,7 +60,7 @@ if __name__ == "__main__":
             optimizer=Adam(1e-4),
             epochs=args.epochs,
             batch_size=args.batch_size,
-            steps_per_epoch=args.steps
+            steps_per_epoch=args.steps,
         )
     elif args.model == "wgan":
         wgan = WGAN(
@@ -73,7 +80,7 @@ if __name__ == "__main__":
             c_optimizer=copt,
             epochs=args.epochs,
             batch_size=args.batch_size,
-            steps_per_epoch=args.steps
+            steps_per_epoch=args.steps,
         )
     else:
         raise NotImplementedError
