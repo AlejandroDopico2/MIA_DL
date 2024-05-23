@@ -30,13 +30,11 @@ class FID(Callback):
             DENORM: Callable, 
             batch_size: int = 10,
             n_samples: int = 500,
-            from_latent: bool = False,
             **kwargs
         ):
         super().__init__(**kwargs)
         self.model = model 
         self.val = val 
-        self.from_latent = from_latent
         self.hidden_size = hidden_size
         self.NORM = NORM 
         self.DENORM = DENORM
@@ -62,11 +60,7 @@ class FID(Callback):
         mu, sigma, n = 0, 0, self.n_samples//self.batch_size
         stream = self.val.stream(None, batch_size=self.batch_size)
         for _ in tqdm(range(n), desc='val', total=n, leave=False):
-            if self.from_latent:
-                latent = tf.random.normal(shape=(self.batch_size, self.hidden_size))
-                fake = self.preprocess(self.model.predict(latent, verbose=0))
-            else:
-                fake = self.preprocess(self.model.predict(next(stream)[1], verbose=0))
+            fake = self.preprocess(self.model.predict(next(stream)[1], verbose=0))
             act = self.fmodel.predict(fake, verbose=0)
             mu += act.mean(axis=0)
             sigma += cov(act, rowvar=False)
@@ -95,8 +89,7 @@ class SaveImagesCallback(Callback):
         DENORM: Callable,
         hidden_size: int, 
         save_frequency: int = 5,
-        n_samples: int = 100,
-        from_latent: bool = False 
+        n_samples: int = 100
     ):
         super(SaveImagesCallback, self).__init__()
         self.model = model
@@ -104,7 +97,6 @@ class SaveImagesCallback(Callback):
         self.output_folder = output_folder + "/val_pred"
         self.save_frequency = save_frequency
         self.DENORM = DENORM
-        self.from_latent = from_latent
         self.hidden_size = hidden_size
 
         if not os.path.exists(self.output_folder):
@@ -116,13 +108,8 @@ class SaveImagesCallback(Callback):
         output_folder = f"{self.output_folder}/epoch_{epoch}"
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
-        
-        if self.from_latent:
-            latent = tf.random.normal(shape=(len(self.files), self.hidden_size))
-            output_batch = self.DENORM(self.model.predict(latent, verbose=0))
-        else:
-            output_batch = self.DENORM(self.model.predict(self.data, verbose=0))
-            
+
+        output_batch = self.DENORM(self.model.predict(self.data, verbose=0))
         for i, file in enumerate(self.files):
             img = Image.fromarray(output_batch[i])
             img.save(f"{output_folder}/{file}.jpg")

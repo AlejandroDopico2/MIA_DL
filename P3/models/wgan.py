@@ -15,7 +15,7 @@ from tensorflow.keras.callbacks import (
     ModelCheckpoint,
     TensorBoard,
 )
-from models.layers import ConvBlock, DeconvBlock, ResidualBlock
+from models.layers import ConvBlock, DeconvBlock, ResidualBlock, skip_autoencoder
 from tensorflow.keras.layers import (
     InputLayer,
     BatchNormalization,
@@ -51,7 +51,7 @@ class LossHistory(Callback):
         self.history["g_acc"].append(logs["g_acc"])
 
         
-class WGAN:
+class GAN:
     NORM = lambda _, x: (tf.cast(x, tf.float32) - 127.5) / 127.5
     DENORM = lambda _, x: np.uint8(x * 127.5 + 127.5)
     INCEPTION_SIZE = (299, 299, 3)
@@ -62,64 +62,10 @@ class WGAN:
         hidden_size: int,
         critic_steps: int,
         gp_weight: float,
-        residual: bool = False
+        autoencoder: bool = False
     ):
         self.hidden_size = hidden_size
-        
-        
-        # discriminator
-        critic_input = Input(shape=img_size)
-        x = Conv2D(32, kernel_size=4, strides=2, padding="same")(critic_input)
-        x = LeakyReLU(0.2)(x)
-        x = Conv2D(32, kernel_size=4, strides=2, padding="same")(x)
-        x = LeakyReLU(0.2)(x)
-        x = Conv2D(32, kernel_size=4, strides=2, padding="same")(x)
-        x = LeakyReLU()(x)
-        x = Dropout(0.3)(x)
-        x = Conv2D(32, kernel_size=4, strides=2, padding="same")(x)
-        x = LeakyReLU(0.2)(x)
-        x = Dropout(0.3)(x)
-        x = Conv2D(32, kernel_size=4, strides=2, padding="same")(x)
-        x = LeakyReLU(0.2)(x)
-        x = Dropout(0.3)(x)
-        x = Conv2D(1, kernel_size=4, strides=1, padding="valid")(x)
-        critic_output = Flatten()(x)
-
-        critic = Model(critic_input, critic_output, name="discriminator")
-
-        # generator
-        generator_input = Input(shape=(hidden_size,))
-        x = Reshape((1, 1, hidden_size))(generator_input)
-        x = Conv2DTranspose(
-            1024, kernel_size=4, strides=1, padding="valid", use_bias=False
-        )(x)
-        x = BatchNormalization(momentum=0.9)(x)
-        x = LeakyReLU(0.2)(x)
-        x = Conv2DTranspose(
-            512, kernel_size=4, strides=2, padding="same", use_bias=False
-        )(x)
-        x = BatchNormalization(momentum=0.9)(x)
-        x = LeakyReLU(0.2)(x)
-        x = Conv2DTranspose(
-            256, kernel_size=4, strides=2, padding="same", use_bias=False
-        )(x)
-        x = BatchNormalization(momentum=0.9)(x)
-        x = LeakyReLU(0.2)(x)
-        x = Conv2DTranspose(
-            128, kernel_size=4, strides=2, padding="same", use_bias=False
-        )(x)
-        x = BatchNormalization(momentum=0.9)(x)
-        x = LeakyReLU(0.2)(x)
-        x = Conv2DTranspose(
-            64, kernel_size=4, strides=2, padding="same", use_bias=False
-        )(x)
-        x = BatchNormalization(momentum=0.9)(x)
-        x = Activation(tanh)(x)
-        generator_output = Conv2DTranspose(
-            img_size[-1], kernel_size=4, strides=2, padding="same", activation="tanh"
-        )(x)
-        generator = Model(generator_input, generator_output, name="generator")
-        self.model = WGANGP(critic, generator, hidden_size, critic_steps, gp_weight)
+        self.model = WGANGP(img_size, hidden_size, critic_steps, gp_weight, autoencoder)
 
     def train(
         self,
@@ -142,8 +88,7 @@ class WGAN:
             TensorBoard(log_dir=f"{path}/logs"),
             LossHistory(),
             FID(self.model, val, self.hidden_size, self.NORM, self.DENORM),
-            SaveImagesCallback(self.model, val, path, self.NORM, self.DENORM, 
-                               self.hidden_size, save_frequency=1, from_latent=True),
+            SaveImagesCallback(self.model, val, path, self.NORM, self.DENORM, self.hidden_size, save_frequency=1),
             ModelCheckpoint(f"{path}/checkpoint/checkpoint.ckpt", 'fid', save_weights_only=True, save_best_only=True, verbose=0),
             
         ]
@@ -181,15 +126,15 @@ class WGANGP(Model):
     def __init__(
         self,
         img_size: Tuple[int, int, int],
-        generator: Model,
-        latent_dim: int,
+        hidden_size: int, 
         critic_steps: int,
         gp_weight: float,
+        autoencoder: bool = False
     ):
         super(WGANGP, self).__init__()
         
         self.critic = Sequential([
-            InputLayer(shape=img_size),
+            InputLayer(img_size),
             ConvBlock(32, 4, 2),
             ConvBlock(32, 4, 2),
             ConvBlock(32, 4, 2, dropout=0.3),
@@ -197,10 +142,22 @@ class WGANGP(Model):
             Conv2D(1, kernel_size=4, strides=1, padding="valid"),
             Flatten()
         ], name='discriminator')
-        
-        self.critic = critic
-        self.generator = generator
-        self.latent_dim = latent_dim
+        # generator
+        if autoencoder:
+            self.generator = skip_autoencoder(img_size, name='generator')
+        else:
+            self.generator = Sequential([
+                InputLayer(shape=(hidden_size,), name='latent-input'),
+                Reshape((1, 1, hidden_size)),
+                DeconvBlock(1024, 4, 1, padding='valid', bias=False, batch_norm=True),
+                DeconvBlock(512, 4, 2, bias=False, batch_norm=True),
+                DeconvBlock(256, 4, 2, bias=False, batch_norm=True),
+                DeconvBlock(128, 4, 2, bias=False, batch_norm=True),
+                DeconvBlock(64, 4, 2, bias=False, batch_norm=True),
+                Conv2DTranspose(img_size[-1], 4, 2, padding="same", activation="tanh")
+            ], name='generator')
+        self.from_latent = not autoencoder
+        self.hidden_size = hidden_size
         self.critic_steps = critic_steps
         self.gp_weight = gp_weight
 
@@ -223,10 +180,10 @@ class WGANGP(Model):
             self.g_loss_metric
         ]
 
-    def gradient_penalty(self, batch_size, real_images, fake_images):
+    def gradient_penalty(self, batch_size, real, fake):
         alpha = tf.random.normal([batch_size, 1, 1, 1], 0.0, 1.0)
-        diff = fake_images - real_images
-        interpolated = real_images + alpha * diff
+        diff = fake - real
+        interpolated = real + alpha * diff
 
         with tf.GradientTape() as gp_tape:
             gp_tape.watch(interpolated)
@@ -237,40 +194,28 @@ class WGANGP(Model):
         gp = tf.reduce_mean((norm - 1.0) ** 2)
         return gp
 
-    def train_step(self, real_images):
-        batch_size = tf.shape(real_images)[0]
+    def train_step(self, real: tf.Tensor):
+        batch_size = tf.shape(real)[0]
 
-        for i in range(self.critic_steps):
-            random_latent_vectors = tf.random.normal(
-                shape=(batch_size, self.latent_dim)
-            )
-
+        for _ in range(self.critic_steps):
+            inputs = self.get_inputs(real)
             with tf.GradientTape() as tape:
-                fake_images = self.generator(random_latent_vectors, training=True)
-                fake_predictions = self.critic(fake_images, training=True)
-                real_predictions = self.critic(real_images, training=True)
-
-                c_wass_loss = tf.reduce_mean(fake_predictions) - tf.reduce_mean(
-                    real_predictions
-                )
-                c_gp = self.gradient_penalty(batch_size, real_images, fake_images)
+                fake = self.generator(inputs, training=True)
+                fake_predictions = self.critic(fake, training=True)
+                real_predictions = self.critic(real, training=True)
+                c_wass_loss = tf.reduce_mean(fake_predictions) - tf.reduce_mean(real_predictions)
+                c_gp = self.gradient_penalty(batch_size, real, fake)
                 c_loss = c_wass_loss + c_gp * self.gp_weight
-
             c_gradient = tape.gradient(c_loss, self.critic.trainable_variables)
-            self.c_optimizer.apply_gradients(
-                zip(c_gradient, self.critic.trainable_variables)
-            )
+            self.c_optimizer.apply_gradients(zip(c_gradient, self.critic.trainable_variables))
 
-        random_latent_vectors = tf.random.normal(shape=(batch_size, self.latent_dim))
+        inputs = self.get_inputs(real)
         with tf.GradientTape() as tape:
-            fake_images = self.generator(random_latent_vectors, training=True)
-            fake_predictions = self.critic(fake_images, training=True)
+            fake = self.generator(inputs, training=True)
+            fake_predictions = self.critic(fake, training=True)
             g_loss = -tf.reduce_mean(fake_predictions)
-
         gen_gradient = tape.gradient(g_loss, self.generator.trainable_variables)
-        self.g_optimizer.apply_gradients(
-            zip(gen_gradient, self.generator.trainable_variables)
-        )
+        self.g_optimizer.apply_gradients(zip(gen_gradient, self.generator.trainable_variables))
 
         # Calculate Critic and Generator Accuracy
         c_acc = (tf.reduce_mean(tf.cast(tf.math.greater(real_predictions, 0), tf.float32))* 100)
@@ -281,17 +226,14 @@ class WGANGP(Model):
         self.c_gp_metric.update_state(c_gp)
         self.g_loss_metric.update_state(g_loss)
 
-        return {
-            **{m.name: m.result() for m in self.metrics},
-            "c_acc": c_acc,
-            "g_acc": g_acc,
-        }
-        
-    def test_step(self, real: tf.Tensor):
-        batch_size = tf.shape(real)[0]
+        return {**{m.name: m.result() for m in self.metrics}, "c_acc": c_acc, "g_acc": g_acc}
 
-        latent = tf.random.normal(shape=(batch_size, self.latent_dim))
-        fake = self.generator(latent, training=False)
+    def get_inputs(self, real: tf.Tensor):
+        return tf.random.normal(shape=(tf.shape(real)[0], self.hidden_size)) if self.from_latent else real 
+
+    def test_step(self, real: tf.Tensor):
+        inputs = self.get_inputs(real)
+        fake = self.generator(inputs, training=False)
         fake_preds = self.critic(fake, training=False)
         real_preds = self.critic(real, training=False)
 
@@ -300,5 +242,5 @@ class WGANGP(Model):
 
         return {"c_acc": c_acc, "g_acc": g_acc}
 
-    def call(self, latent: tf.Tensor):
-        return self.generator(latent)
+    def call(self, real: tf.Tensor):
+        return self.generator(self.get_inputs(real))

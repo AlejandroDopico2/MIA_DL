@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 
 from data import CelebADataset
-from models import WGAN
+from models import GAN
 from models import VariationalAutoEncoder as VAE
 from tensorflow.keras.optimizers.legacy import Adam
 from tensorflow.python.framework.ops import disable_eager_execution
@@ -46,7 +46,7 @@ if __name__ == "__main__":
             batch_size=args.batch_size,
         )
     elif args.model == "wgan":
-        wgan = WGAN(
+        wgan = GAN(
             CelebADataset.IMG_SIZE,
             hidden_size=args.hidden_size,
             critic_steps=3,

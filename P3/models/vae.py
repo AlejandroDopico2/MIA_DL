@@ -144,7 +144,6 @@ class VariationalAutoEncoder:
                 self.DENORM,
                 self.hidden_size,
                 save_frequency=1,
-                from_latent=False,
             ),
             FID(self.decoder, val, self.hidden_size, self.NORM, self.DENORM),
             EarlyStopping("loss", patience=train_patience),
