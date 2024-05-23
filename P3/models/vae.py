@@ -42,6 +42,7 @@ class VariationalAutoEncoder:
         kernels: List[int],
         strides: List[int],
         filters: List[int],
+        dilation: bool = False,
     ):
         self.hidden_size = hidden_size
 
@@ -50,7 +51,10 @@ class VariationalAutoEncoder:
         x = encoder_input
         shapes = [img_size]
         for i, (n, k, s) in enumerate(zip(filters, kernels, strides)):
-            x = Conv2D(n, k, strides=s, padding="same", name=f"encoder-conv-{i}")(x)
+            if dilation:
+                x = Conv2D(n, k, dilation_rate=s, padding="same", name=f"encoder-conv-{i}")(x)
+            else:
+                x = Conv2D(n, k, strides=s, padding="same", name=f"encoder-conv-{i}")(x)
             x = LeakyReLU()(x)
             shapes.append(K.int_shape(x)[1:])
 
@@ -72,9 +76,14 @@ class VariationalAutoEncoder:
         x = Dense(np.prod(shapes[-1]))(decoder_input)
         x = Reshape(shapes[-1])(x)
         for i, (n, k, s) in enumerate(zip(filters[::-1], kernels[::-1], strides[::-1])):
-            x = Conv2DTranspose(
-                n, k, strides=s, padding="same", name=f"decoder-conv-{i}"
-            )(x)
+            if dilation:  # Conditionally choose Conv2DTranspose with dilation
+                x = Conv2DTranspose(
+                    n, k, dilation_rate=s, padding="same", name=f"decoder-conv-{i}"
+                )(x)
+            else:
+                x = Conv2DTranspose(
+                    n, k, strides=s, padding="same", name=f"decoder-conv-{i}"
+                )(x)
 
             h, w = x.shape[1] - shapes[-i - 2][0], x.shape[2] - shapes[-i - 2][1]
             x = Cropping2D(

@@ -20,6 +20,7 @@ if __name__ == "__main__":
         help="Path to store the model and predictions",
     )
     parser.add_argument("--hidden-size", type=int, default=200, help="Hidden size")
+    parser.add_argument("--dilation", type=bool, default=False, help="Boolean flag for dilation instead of stride in VAE")
     parser.add_argument("--batch-size", type=int, default=20, help="Batch size")
     parser.add_argument(
         "--epochs", type=int, default=100, help="Number of training epochs"
@@ -29,7 +30,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     train, val, test = map(CelebADataset, ("train", "val", "test"))
 
-    path = f"{args.path}/{args.model}_{args.hidden_size}"
+    if args.dilation:
+        path = f"{args.path}/{args.model}_{args.hidden_size}_dilation"
+    else:
+        path = f"{args.path}/{args.model}_{args.hidden_size}_strides"
 
     if args.model == "vae":
         disable_eager_execution()
@@ -39,6 +43,7 @@ if __name__ == "__main__":
             filters=[16, 32, 32, 32],
             kernels=[3, 3, 3, 3],
             strides=[2, 2, 2, 2],
+            dilation=args.dilation
         )
         vae.train(
             train,
