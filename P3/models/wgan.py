@@ -15,7 +15,9 @@ from tensorflow.keras.callbacks import (
     ModelCheckpoint,
     TensorBoard,
 )
+from models.layers import ConvBlock, DeconvBlock, ResidualBlock
 from tensorflow.keras.layers import (
+    InputLayer,
     BatchNormalization,
     Conv2D,
     Conv2DTranspose,
@@ -26,6 +28,7 @@ from tensorflow.keras.layers import (
     Reshape,
     Activation
 )
+from tensorflow.keras import Sequential 
 from tensorflow.keras.metrics import Mean
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam, Optimizer
@@ -59,8 +62,11 @@ class WGAN:
         hidden_size: int,
         critic_steps: int,
         gp_weight: float,
+        residual: bool = False
     ):
         self.hidden_size = hidden_size
+        
+        
         # discriminator
         critic_input = Input(shape=img_size)
         x = Conv2D(32, kernel_size=4, strides=2, padding="same")(critic_input)
@@ -129,8 +135,6 @@ class WGAN:
         g_optimizer: Optimizer = Adam(2e-4, 0.5, 0.999),
     ) -> Dict[str, List[float]]:
         self.model.compile(c_optimizer, g_optimizer)
-        if os.path.exists(path):
-            shutil.rmtree(path)
         train_tf = train.to_tf(self.NORM, batch_size, targets=False)
         val_tf = val.to_tf(self.NORM, batch_size, targets=False)
         callbacks = [
@@ -159,9 +163,8 @@ class WGAN:
         out: str,
         batch_size: int = 10,
     ):
-        if os.path.exists(out):
-            shutil.rmtree(out)
-        os.makedirs(out)
+        if not os.path.exists(out):
+            os.makedirs(out)
         inputs, outputs = [], []
         for files, input in data.stream(self.NORM, batch_size):
             latent = tf.random.normal(shape=(input.shape[0], self.hidden_size))
@@ -177,13 +180,24 @@ class WGAN:
 class WGANGP(Model):
     def __init__(
         self,
-        critic: Model,
+        img_size: Tuple[int, int, int],
         generator: Model,
         latent_dim: int,
         critic_steps: int,
         gp_weight: float,
     ):
         super(WGANGP, self).__init__()
+        
+        self.critic = Sequential([
+            InputLayer(shape=img_size),
+            ConvBlock(32, 4, 2),
+            ConvBlock(32, 4, 2),
+            ConvBlock(32, 4, 2, dropout=0.3),
+            ConvBlock(32, 4, 2, dropout=0.3),
+            Conv2D(1, kernel_size=4, strides=1, padding="valid"),
+            Flatten()
+        ], name='discriminator')
+        
         self.critic = critic
         self.generator = generator
         self.latent_dim = latent_dim

@@ -30,10 +30,13 @@ class FID(Callback):
             DENORM: Callable, 
             batch_size: int = 10,
             n_samples: int = 500,
+            from_latent: bool = False,
             **kwargs
         ):
         super().__init__(**kwargs)
         self.model = model 
+        self.val = val 
+        self.from_latent = from_latent
         self.hidden_size = hidden_size
         self.NORM = NORM 
         self.DENORM = DENORM
@@ -57,9 +60,13 @@ class FID(Callback):
         
     def on_epoch_end(self, epoch, logs):
         mu, sigma, n = 0, 0, self.n_samples//self.batch_size
+        stream = self.val.stream(None, batch_size=self.batch_size)
         for _ in tqdm(range(n), desc='val', total=n, leave=False):
-            latent = tf.random.normal(shape=(self.batch_size, self.hidden_size))
-            fake = self.preprocess(self.model.predict(latent, verbose=0))
+            if self.from_latent:
+                latent = tf.random.normal(shape=(self.batch_size, self.hidden_size))
+                fake = self.preprocess(self.model.predict(latent, verbose=0))
+            else:
+                fake = self.preprocess(self.model.predict(next(stream)[1], verbose=0))
             act = self.fmodel.predict(fake, verbose=0)
             mu += act.mean(axis=0)
             sigma += cov(act, rowvar=False)

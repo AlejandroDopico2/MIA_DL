@@ -116,7 +116,6 @@ class VariationalAutoEncoder:
             return self.LOSS_FACTOR * r_loss(y_true, y_pred) + kl_loss(y_true, y_pred)
 
         self.METRICS = [r_loss, kl_loss]
-
         self.LOSS = total_loss
 
     def train(
@@ -133,9 +132,6 @@ class VariationalAutoEncoder:
         optimizer: Optimizer = Adam(1e-4),
     ) -> Dict[str, List[float]]:
         self.model.compile(optimizer=optimizer, loss=self.LOSS, metrics=self.METRICS)
-        if os.path.exists(path):
-            shutil.rmtree(path)
-
         train_tf = train.to_tf(self.NORM, batch_size, targets=True)
         val_tf = val.to_tf(self.NORM, batch_size, targets=True)
 
@@ -150,7 +146,7 @@ class VariationalAutoEncoder:
                 save_frequency=1,
                 from_latent=False,
             ),
-            FID(self.model, val, self.hidden_size, self.NORM, self.DENORM),
+            FID(self.decoder, val, self.hidden_size, self.NORM, self.DENORM),
             EarlyStopping("loss", patience=train_patience),
             EarlyStopping("val_loss", patience=dev_patience),
             ModelCheckpoint(
@@ -180,10 +176,9 @@ class VariationalAutoEncoder:
         data: CelebADataset,
         out: str,
         batch_size: int = 10,
-    ) -> float:
-        if os.path.exists(out):
-            shutil.rmtree(out)
-        os.makedirs(out)
+    ):
+        if not os.path.exists(out):
+            os.makedirs(out)
         inputs, outputs = [], []
         for files, input in data.stream(self.NORM, batch_size):
             output = self.DENORM(self.model.predict(input))

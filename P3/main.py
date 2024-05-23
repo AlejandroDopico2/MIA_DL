@@ -27,7 +27,6 @@ if __name__ == "__main__":
         help="Boolean flag for dilation instead of stride in VAE",
     )
     parser.add_argument("--batch-size", type=int, default=20, help="Batch size")
-    parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
     parser.add_argument(
         "--epochs", type=int, default=100, help="Number of training epochs"
     )
