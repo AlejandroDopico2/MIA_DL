@@ -1,2 +1,2 @@
-from .vae import VariationalAutoEncoder
-from .wgan import GAN
+from .vae import VAE
+from .gan import GAN

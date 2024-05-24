@@ -15,7 +15,7 @@ from tensorflow.keras.callbacks import (
     ModelCheckpoint,
     TensorBoard,
 )
-from models.layers import ConvBlock, DeconvBlock, ResidualBlock, skip_autoencoder
+from models.layers import ConvBlock, DeconvBlock, skip_vae, ResidualDeconvBlock
 from tensorflow.keras.layers import (
     InputLayer,
     BatchNormalization,
@@ -33,12 +33,8 @@ from tensorflow.keras.metrics import Mean
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam, Optimizer
 from PIL import Image
-from keras.applications.inception_v3 import InceptionV3, preprocess_input
-from skimage.transform import resize
-from numpy import cov, iscomplexobj, trace
-from scipy.linalg import sqrtm
 from utils import SaveImagesCallback, FID
-from keras.activations import tanh
+from models.layers import VariationalAutoEncoder
 
 class LossHistory(Callback):
     def on_train_begin(self, logs=None):
@@ -60,12 +56,14 @@ class GAN:
         self,
         img_size: Tuple[int, int, int],
         hidden_size: int,
+        pool: str,
+        residual: bool,
+        autoencoder: bool,
         critic_steps: int,
-        gp_weight: float,
-        autoencoder: bool = False
+        gp_weight: float
     ):
         self.hidden_size = hidden_size
-        self.model = WGANGP(img_size, hidden_size, critic_steps, gp_weight, autoencoder)
+        self.model = WGANGP(img_size, hidden_size, pool, residual, autoencoder, critic_steps, gp_weight)
 
     def train(
         self,
@@ -90,24 +88,19 @@ class GAN:
             FID(self.model, val, self.hidden_size, self.NORM, self.DENORM),
             SaveImagesCallback(self.model, val, path, self.NORM, self.DENORM, self.hidden_size, save_frequency=1),
             ModelCheckpoint(f"{path}/checkpoint/checkpoint.ckpt", 'fid', save_weights_only=True, save_best_only=True, verbose=0),
-            
         ]
 
-        history = self.model.fit(train_tf, epochs=epochs, callbacks=callbacks, validation_data=val_tf,
-                                 steps_per_epoch=steps_per_epoch, validation_steps=steps_per_epoch
-                                 ).history
+        history = self.model.fit(
+            train_tf, epochs=epochs, callbacks=callbacks, validation_data=val_tf,
+            steps_per_epoch=steps_per_epoch, validation_steps=steps_per_epoch
+        ).history
         self.model.load_weights(f"{path}/checkpoint/checkpoint.ckpt")
         self.predict(test, f"{path}/preds/", batch_size)
         with open(f'{path}/history.pkl', 'wb') as writer:
             pickle.dump(history, writer)
         return history
 
-    def predict(
-        self,
-        data: CelebADataset,
-        out: str,
-        batch_size: int = 10,
-    ):
+    def predict(self, data: CelebADataset, out: str, batch_size: int = 10):
         if not os.path.exists(out):
             os.makedirs(out)
         inputs, outputs = [], []
@@ -121,15 +114,16 @@ class GAN:
             inputs.append(input)
 
 
-
 class WGANGP(Model):
     def __init__(
         self,
         img_size: Tuple[int, int, int],
         hidden_size: int, 
+        pool: str,
+        residual: bool,
+        autoencoder: bool,
         critic_steps: int,
-        gp_weight: float,
-        autoencoder: bool = False
+        gp_weight: float
     ):
         super(WGANGP, self).__init__()
         
@@ -142,20 +136,25 @@ class WGANGP(Model):
             Conv2D(1, kernel_size=4, strides=1, padding="valid"),
             Flatten()
         ], name='discriminator')
+        
         # generator
         if autoencoder:
-            self.generator = skip_autoencoder(img_size, name='generator')
+            self.generator = VariationalAutoEncoder(
+                img_size, hidden_size, pool, residual, skips=True, act='tanh', name='generator', loss_factor=1000)
         else:
+            deconv = DeconvBlock if not residual else ResidualDeconvBlock
+            args = dict(bias=False, batch_norm=False) | (dict(dilation=1, strides=2) if pool == 'strides' else dict(dilation=2, pool=True))
             self.generator = Sequential([
-                InputLayer(shape=(hidden_size,), name='latent-input'),
-                Reshape((1, 1, hidden_size)),
-                DeconvBlock(1024, 4, 1, padding='valid', bias=False, batch_norm=True),
-                DeconvBlock(512, 4, 2, bias=False, batch_norm=True),
-                DeconvBlock(256, 4, 2, bias=False, batch_norm=True),
-                DeconvBlock(128, 4, 2, bias=False, batch_norm=True),
-                DeconvBlock(64, 4, 2, bias=False, batch_norm=True),
-                Conv2DTranspose(img_size[-1], 4, 2, padding="same", activation="tanh")
+                Input(shape=(hidden_size,), name='latent-input'),
+                Reshape((1, 1, hidden_size), name='input-reshape'),
+                deconv(1024, 4, 1, padding='valid', bias=False, batch_norm=True, name='deconv1'),
+                deconv(512, 4, **args, name='deconv2'), 
+                deconv(256, 4, **args, name='deconv3'), 
+                deconv(128, 4, **args, name='deconv4'), 
+                deconv(64, 4, **args, name='deconv5'), 
+                Conv2DTranspose(img_size[-1], 4, 2, padding="same", activation="tanh", name='output')
             ], name='generator')
+            print(self.generator.summary())
         self.from_latent = not autoencoder
         self.hidden_size = hidden_size
         self.critic_steps = critic_steps
