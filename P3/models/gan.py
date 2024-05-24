@@ -86,7 +86,7 @@ class GAN:
             TensorBoard(log_dir=f"{path}/logs"),
             LossHistory(),
             FID(self.model, train, val, self.NORM, self.DENORM),
-            SaveImagesCallback(self.model, val, path, self.NORM, self.DENORM, save_frequency=1),
+            SaveImagesCallback(self.model, val, f'{path}/val-preds', self.NORM, self.DENORM, save_frequency=1),
             ModelCheckpoint(f"{path}/checkpoint/checkpoint.ckpt", 'val_fid', save_weights_only=True, save_best_only=True, verbose=0),
         ]
 
@@ -95,7 +95,7 @@ class GAN:
             steps_per_epoch=steps_per_epoch, validation_steps=steps_per_epoch
         ).history
         self.model.load_weights(f"{path}/checkpoint/checkpoint.ckpt")
-        self.predict(test, f"{path}/preds/", batch_size)
+        self.predict(test, f"{path}/test-preds/", batch_size)
         with open(f'{path}/history.pkl', 'wb') as writer:
             pickle.dump(history, writer)
         return history

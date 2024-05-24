@@ -55,7 +55,7 @@ class FID(Callback):
         # get batches 
         self.train, self.val = [], []
         train_stream = train.stream(NORM, batch_size)
-        val_stream = train.stream(NORM, batch_size)
+        val_stream = val.stream(NORM, batch_size)
         for _ in range(n_samples//batch_size):
             self.train.append(next(train_stream)[1])
             self.val.append(next(val_stream)[1])

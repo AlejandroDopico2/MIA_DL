@@ -166,24 +166,22 @@ def vae(img_size: Tuple[int, int, int], hidden_size: int, act: str, residual: bo
     deconv = DeconvBlock if not residual else ResidualDeconvBlock
     
     encoder_input = Input(img_size, name='encoder-input')
-    conv1 = conv(32, 4, **args, name='conv1')(encoder_input)
-    conv2 = conv(32, 4, **args, name='conv2')(conv1)
-    conv3 = conv(32, 4, **args, name='conv3')(conv2)
-    conv4 = conv(32, 4, **args, name='conv4')(conv3)
-    conv5 = conv(32, 4, **args, name='conv5')(conv4)
-    latent = Flatten()(conv5)
+    conv1 = conv(32, 3, **args, name='conv1')(encoder_input)
+    conv2 = conv(32, 3, **args, name='conv2')(conv1)
+    conv3 = conv(32, 3, **args, name='conv3')(conv2)
+    conv4 = conv(32, 3, **args, name='conv4')(conv3)
+    latent = Flatten()(conv4)
     mean_mu = Dense(hidden_size, name="mu")(latent)
     log_var = Dense(hidden_size, name="log-var")(latent)
     encoder_output = Lambda(sampling, name="encoder-output")([mean_mu, log_var])
     
-    shape = K.int_shape(conv5)[1:]
+    shape = (img_size[0]//2**4, img_size[1]//2**4, 32)
     decoder_input = Input((hidden_size,))
     transform = Sequential([Dense(np.prod(shape)), Reshape(shape)], name='transform')(decoder_input)
-    deconv5 = deconv(32, 4, **args, name='deconv5')(transform)
-    deconv4 = deconv(32, 4, **args, name='deconv4')(deconv5)
-    deconv3 = deconv(32, 4, **args, name='deconv3')(deconv4)
-    deconv2 = deconv(32, 4, **args, name='deconv2')(deconv3)
-    deconv1 = deconv(32, 4, **args, name='deconv1')(deconv2)
+    deconv4 = deconv(32, 3, **args, name='deconv4')(transform)
+    deconv3 = deconv(32, 3, **args, name='deconv3')(deconv4)
+    deconv2 = deconv(32, 3, **args, name='deconv2')(deconv3)
+    deconv1 = deconv(32, 3, **args, name='deconv1')(deconv2)
     decoder_output = Conv2D(3, 1, activation=act, name='output')(deconv1)
     return encoder_input, encoder_output, decoder_input, decoder_output, mean_mu, log_var
 
@@ -193,27 +191,25 @@ def skip_vae(img_size: Tuple[int, int, int], hidden_size: int, act: str, residua
     deconv = DeconvBlock if not residual else ResidualDeconvBlock
 
     encoder_input = Input(img_size, name='encoder-input')
-    conv1 = conv(32, 4, **args, name='conv1')(encoder_input)
-    conv2 = conv(32, 4, **args, name='conv2')(conv1)
-    conv3 = conv(32, 4, **args, name='conv3')(conv2)
-    conv4 = conv(32, 4, **args, name='conv4')(conv3)
-    conv5 = conv(32, 4, **args, name='conv5')(conv4)
-    latent = Flatten()(conv5)
+    conv1 = conv(32, 3, **args, name='conv1')(encoder_input)
+    conv2 = conv(32, 3, **args, name='conv2')(conv1)
+    conv3 = conv(32, 3, **args, name='conv3')(conv2)
+    conv4 = conv(32, 3, **args, name='conv4')(conv3)
+    latent = Flatten()(conv4)
     mean_mu = Dense(hidden_size, name="mu")(latent)
     log_var = Dense(hidden_size, name="log-var")(latent)
     encoder_output = Lambda(sampling, name="encoder-output")([mean_mu, log_var])
     
     # decoder 
-    shape = K.int_shape(conv5)[1:]
-    decoder_input = Input((hidden_size,))
-    transform = Sequential([Dense(np.prod(shape)), Reshape(shape)], name='transform')(decoder_input)
-    deconv5 = deconv(32, 4, **args, name='deconv5')(transform)
-    deconv4 = Sequential([Concatenate(-1), deconv(32, 4, **args)], name='deconv4')([deconv5, conv4])
-    deconv3 = Sequential([Concatenate(-1), deconv(32, 4, **args)], name='deconv3')([deconv4, conv3])
-    deconv2 = Sequential([Concatenate(-1), deconv(32, 4, **args)], name='deconv2')([deconv3, conv2])
-    deconv1 = Sequential([Concatenate(-1), deconv(32, 4, **args)], name='deconv1')([deconv2, conv1])
+    shape = (img_size[0]//2**4, img_size[1]//2**4, 32)
+    # decoder_input = Input((hidden_size,))
+    transform = Sequential([Dense(np.prod(shape)), Reshape(shape)], name='transform')(encoder_output)
+    deconv4 = deconv(32, 3, **args, name='deconv4')(transform)
+    deconv3 = Sequential([Concatenate(-1), deconv(32, 3, **args)], name='deconv3')([deconv4, conv3])
+    deconv2 = Sequential([Concatenate(-1), deconv(32, 3, **args)], name='deconv2')([deconv3, conv2])
+    deconv1 = Sequential([Concatenate(-1), deconv(32, 3, **args)], name='deconv1')([deconv2, conv1])
     decoder_output = Conv2D(3, 1, activation=act, name='output')(deconv1)
-    return encoder_input, encoder_output, [encoder_input, decoder_input], decoder_output, mean_mu, log_var
+    return encoder_input, encoder_output, encoder_output, decoder_output, mean_mu, log_var
 
 
 
@@ -231,17 +227,14 @@ class VariationalAutoEncoder(Model):
         ):
         super().__init__(name=name)
         args = dict(dilation=2, strides=1, pool=True) if pool == 'dilation' else dict(strides=2, dilation=1)
-        # encoder_input, encoder_output, decoder_input, decoder_output, mean_mu, log_var \
-        #     = (vae if not skips else skip_vae)(img_size, hidden_size, act, residual, **args)
         
         conv = ConvBlock if not residual else ResidualConvBlock
         
         # -------------------- encoder ------------------
-        self.conv1 = conv(32, 4, **args, name='conv1')
-        self.conv2 = conv(32, 4, **args, name='conv2')
-        self.conv3 = conv(32, 4, **args, name='conv3')
-        self.conv4 = conv(32, 4, **args, name='conv4')
-        self.conv5 = conv(32, 4, **args, name='conv5')
+        self.conv1 = conv(32, 3, **args, name='conv1')
+        self.conv2 = conv(32, 3, **args, name='conv2')
+        self.conv3 = conv(32, 3, **args, name='conv3')
+        self.conv4 = conv(32, 3, **args, name='conv4')
         self.flatten = Flatten()
         self.mean = Dense(hidden_size, name="mu")
         self.logvar = Dense(hidden_size, name="log-var")
@@ -249,20 +242,18 @@ class VariationalAutoEncoder(Model):
         
         # -------------------- decoder -----------------------
         deconv = DeconvBlock if not residual else ResidualDeconvBlock
-        shape = (img_size[0]//2**5, img_size[1]//2**5, 32)
+        shape = (img_size[0]//2**4, img_size[1]//2**4, 32)
         self.transform = Sequential([Dense(np.prod(shape)), Reshape(shape)], name='transform')
-        self.deconv5 = deconv(32, 4, **args, name='deconv5')
+        self.deconv4 = deconv(32, 3, **args, name='deconv5')
         if skips:
-            self.deconv4 = Sequential([Concatenate(-1), deconv(32, 4, **args)], name='deconv4')
-            self.deconv3 = Sequential([Concatenate(-1), deconv(32, 4, **args)], name='deconv3')
-            self.deconv2 = Sequential([Concatenate(-1), deconv(32, 4, **args)], name='deconv2')
-            self.deconv1 = Sequential([Concatenate(-1), deconv(32, 4, **args)], name='deconv1')
+            self.deconv3 = Sequential([Concatenate(-1), deconv(32, 3, **args)], name='deconv3')
+            self.deconv2 = Sequential([Concatenate(-1), deconv(32, 3, **args)], name='deconv2')
+            self.deconv1 = Sequential([Concatenate(-1), deconv(32, 3, **args)], name='deconv1')
         else:
             self.deconv = DeconvBlock if not residual else ResidualDeconvBlock
-            self.deconv4 = deconv(32, 4, **args, name='deconv4')
-            self.deconv3 = deconv(32, 4, **args, name='deconv3')
-            self.deconv2 = deconv(32, 4, **args, name='deconv2')
-            self.deconv1 = deconv(32, 4, **args, name='deconv1')
+            self.deconv3 = deconv(32, 3, **args, name='deconv3')
+            self.deconv2 = deconv(32, 3, **args, name='deconv2')
+            self.deconv1 = deconv(32, 3, **args, name='deconv1')
         self.out = Conv2D(3, 1, activation=act, name='output')
 
         def r_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
@@ -291,15 +282,13 @@ class VariationalAutoEncoder(Model):
         conv2 = self.conv2(conv1)
         conv3 = self.conv3(conv2)
         conv4 = self.conv4(conv3)
-        conv5 = self.conv5(conv4)
-        flat = self.flatten(conv5)
+        flat = self.flatten(conv4)
         self.__mean, self.__logvar = self.mean(flat), self.logvar(flat)
         latent = self.latent([self.__mean, self.__logvar])
         
         # decoder pass 
         reshape = self.transform(latent)
-        deconv5 = self.deconv5(reshape)
-        deconv4 = self.deconv4([deconv5, conv4] if self.skips else deconv5)
+        deconv4 = self.deconv4(reshape)
         deconv3 = self.deconv3([deconv4, conv3] if self.skips else deconv4)
         deconv2 = self.deconv2([deconv3, conv2] if self.skips else deconv3)
         deconv1 = self.deconv1([deconv2, conv1] if self.skips else deconv2)

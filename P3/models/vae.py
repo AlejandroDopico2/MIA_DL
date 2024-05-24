@@ -27,7 +27,7 @@ from keras.models import Model
 from keras.optimizers.legacy import Adam, Optimizer
 from PIL import Image
 from utils import FID, SaveImagesCallback
-from models.layers import VariationalAutoEncoder
+from models.layers import vae, skip_vae
 
 
 class VAE:
@@ -41,13 +41,36 @@ class VAE:
             hidden_size: int,
             pool: str,
             residual: bool,
-            skips: bool
+            skips: bool,
+            loss_factor: int = 1000
         ):
         self.hidden_size = hidden_size
-        self.model = VariationalAutoEncoder(
-            img_size, hidden_size, pool, residual, skips, act='sigmoid', 
-            name='skip-'*skips + 'vae', loss_factor=1000
-        )
+        args = dict(dilation=2, strides=1, pool=True) if pool == 'dilation' else dict(strides=2, dilation=1)
+        encoder_input, encoder_output, decoder_input, decoder_output, mean_mu, log_var = \
+            (skip_vae if skips else vae)(img_size, hidden_size, act='sigmoid', residual=residual, **args)
+        
+        def r_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+            return K.mean(K.square(y_true - y_pred), axis=[1, 2, 3])
+
+        def kl_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+            return -0.5 * K.sum(1 + mean_mu - K.square(mean_mu) - K.exp(log_var), axis=1)
+
+        def total_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+            return loss_factor * r_loss(y_true, y_pred) + kl_loss(y_true, y_pred)
+        
+        if skips:
+            encoder = Model(encoder_input, encoder_output, name='encoder')
+            decoder = None
+            self.model = Model(encoder_input, decoder_output, name='skip-vae')
+        else:
+            encoder = Model(encoder_input, encoder_output, name='encoder')
+            decoder = Model(decoder_input, decoder_output, name='decoder')
+            self.model = Model(encoder_input, decoder(encoder_output), name='vae')
+            
+        self.model.METRICS = [r_loss, kl_loss]
+        self.model.LOSS = total_loss
+        self.model.encoder = encoder
+        self.model.decoder = decoder 
 
     def train(
             self,
@@ -71,7 +94,7 @@ class VAE:
             FID(self.model, train, val, self.NORM, self.DENORM),
             EarlyStopping("loss", patience=train_patience),
             EarlyStopping("val_loss", patience=val_patience),
-            ModelCheckpoint(f"{path}/model.weights.h5", "val_fid", save_weights_only=True, save_best_only=True, verbose=0),
+            ModelCheckpoint(f"{path}/model.h5", "val_fid", save_weights_only=True, save_best_only=True, verbose=0),
         ]
         history = self.model.fit(
             train_tf,
@@ -83,7 +106,7 @@ class VAE:
         ).history 
         with open(f"{path}/history.pkl", "wb") as f:
             pickle.dump(history, f)
-        self.model.load_weights(f"{path}/model.weights.h5")
+        self.model.load_weights(f"{path}/model.h5")
         self.predict(test, f"{path}/test-preds/", batch_size)
         return history
 
