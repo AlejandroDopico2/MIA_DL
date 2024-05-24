@@ -85,9 +85,9 @@ class GAN:
             EarlyStopping("g_loss", patience=train_patience),
             TensorBoard(log_dir=f"{path}/logs"),
             LossHistory(),
-            FID(self.model, val, self.hidden_size, self.NORM, self.DENORM),
-            SaveImagesCallback(self.model, val, path, self.NORM, self.DENORM, self.hidden_size, save_frequency=1),
-            ModelCheckpoint(f"{path}/checkpoint/checkpoint.ckpt", 'fid', save_weights_only=True, save_best_only=True, verbose=0),
+            FID(self.model, train, val, self.NORM, self.DENORM),
+            SaveImagesCallback(self.model, val, path, self.NORM, self.DENORM, save_frequency=1),
+            ModelCheckpoint(f"{path}/checkpoint/checkpoint.ckpt", 'val_fid', save_weights_only=True, save_best_only=True, verbose=0),
         ]
 
         history = self.model.fit(
@@ -154,7 +154,6 @@ class WGANGP(Model):
                 deconv(64, 4, **args, name='deconv5'), 
                 Conv2DTranspose(img_size[-1], 4, 2, padding="same", activation="tanh", name='output')
             ], name='generator')
-            print(self.generator.summary())
         self.from_latent = not autoencoder
         self.hidden_size = hidden_size
         self.critic_steps = critic_steps

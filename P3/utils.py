@@ -16,66 +16,82 @@ from keras.metrics import Metric
 
 from tqdm import tqdm 
 
-    
-    
+
+
 class FID(Callback):
     INCEPTION_SIZE = (299, 299, 3)
     
     def __init__(
             self, 
             model: Model,
+            train: CelebADataset,
             val: CelebADataset,
-            hidden_size: int, 
             NORM: Callable,
             DENORM: Callable, 
             batch_size: int = 10,
             n_samples: int = 500,
             **kwargs
         ):
+        """
+        Callback to track the FID score in a CelebA dataset.
+        
+        Args:
+            model (Model): Keras model to generate images.
+            train (CelebADataset): Ground truth of the train set.
+            val (CelebADataset): Ground truth of the validation set.
+            NORM (Callable): Normalization function.
+            DENORM (Callable): Denormalization function.
+            batch_size (int): Batch size to feed the Inception network. Default to 10.
+            n_samples (int): Number of samples to compute the FID metrics (mean and std). Defaults to 500.
+        """
         super().__init__(**kwargs)
         self.model = model 
-        self.val = val 
-        self.hidden_size = hidden_size
         self.NORM = NORM 
         self.DENORM = DENORM
         self.fmodel = InceptionV3(include_top=False, pooling='avg', input_shape=self.INCEPTION_SIZE)
         self.n_samples = n_samples
         self.batch_size = batch_size
-        self.best, self.best_epoch = np.Inf, 0
+        
+        # get batches 
+        self.train, self.val = [], []
+        train_stream = train.stream(NORM, batch_size)
+        val_stream = train.stream(NORM, batch_size)
+        for _ in range(n_samples//batch_size):
+            self.train.append(next(train_stream)[1])
+            self.val.append(next(val_stream)[1])
 
         # precompute mean and standard deviation from the ground truth 
-        mu, sigma, n = 0, 0, n_samples//batch_size
-        stream = val.stream(None, batch_size=batch_size)
-        for _ in tqdm(range(n), desc='inception', total=n, leave=False):
-            real = self.preprocess(next(stream)[1])
-            act = self.fmodel.predict(real, verbose=0)
-            mu += act.mean(axis=0)
-            sigma += cov(act, rowvar=False)
-        self.mu = mu/n
-        self.sigma = sigma/n
-        self.step = 0 
+        self.mu, self.sigma = 0, 0
+        for real in tqdm(self.train, desc='inception', total=len(self.train), leave=False):
+            act = self.fmodel.predict(self.preprocess(real), verbose=0)
+            self.mu += act.mean(axis=0)
+            self.sigma += cov(act, rowvar=False)
+        self.mu /= len(self.train)
+        self.sigma /= len(self.train)
 
         
     def on_epoch_end(self, epoch, logs):
-        mu, sigma, n = 0, 0, self.n_samples//self.batch_size
-        stream = self.val.stream(None, batch_size=self.batch_size)
-        for _ in tqdm(range(n), desc='val', total=n, leave=False):
-            fake = self.preprocess(self.model.predict(next(stream)[1], verbose=0))
+        logs['fid'] = self.eval(self.train)
+        logs['val_fid'] = self.eval(self.val)
+
+    def eval(self, data: List[np.ndarray]) -> float:
+        mu, sigma = 0, 0
+        for real in tqdm(data, desc='saving-data', total=len(data), leave=False):
+            fake = self.preprocess(self.DENORM(self.model.predict(real, verbose=0)))
             act = self.fmodel.predict(fake, verbose=0)
             mu += act.mean(axis=0)
             sigma += cov(act, rowvar=False)
-        mu /= n
-        sigma /= n 
+        mu, sigma = mu/len(data), sigma/len(data)
         ssdiff = np.sum((self.mu - mu) ** 2.0)
         covmean = sqrtm(self.sigma.dot(sigma))
         if iscomplexobj(covmean):
             covmean = covmean.real
-        fid = ssdiff + trace(self.sigma + sigma - 2.0 * covmean)
-        logs['fid'] = fid 
+        return ssdiff + trace(self.sigma + sigma - 2.0 * covmean)
+        
 
     def preprocess(self, imgs: np.ndarray) -> np.ndarray:
         return np.stack(
-            [preprocess_input(resize(img, self.INCEPTION_SIZE, 0)) for img in self.DENORM(imgs)], 0
+            [preprocess_input(resize(img, self.INCEPTION_SIZE, 0)) for img in imgs], 0
         )
 
 
@@ -83,21 +99,19 @@ class SaveImagesCallback(Callback):
     def __init__(
         self,
         model,
-        val: CelebADataset,
+        data: CelebADataset,
         output_folder: str,
         NORM: Callable, 
         DENORM: Callable,
-        hidden_size: int, 
         save_frequency: int = 5,
         n_samples: int = 100
     ):
         super(SaveImagesCallback, self).__init__()
         self.model = model
-        self.files, self.data = next(val.stream(NORM, n_samples))
-        self.output_folder = output_folder + "/val_pred"
+        self.files, self.data = next(data.stream(NORM, n_samples))
+        self.output_folder = output_folder
         self.save_frequency = save_frequency
         self.DENORM = DENORM
-        self.hidden_size = hidden_size
 
         if not os.path.exists(self.output_folder):
             os.makedirs(self.output_folder)
@@ -108,14 +122,10 @@ class SaveImagesCallback(Callback):
         output_folder = f"{self.output_folder}/epoch_{epoch}"
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
-
         output_batch = self.DENORM(self.model.predict(self.data, verbose=0))
         for i, file in enumerate(self.files):
             img = Image.fromarray(output_batch[i])
-            img.save(f"{output_folder}/{file}.jpg")
-        print(f"Saved validation predictions for epoch {epoch + 1}.")
-
-
+            img.save(f"{output_folder}/{file}")
 
 def plot_history(
     history: Dict[str, List[float]], name: Union[str, List[str]] = "loss"

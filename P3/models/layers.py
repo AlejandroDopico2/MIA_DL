@@ -269,7 +269,7 @@ class VariationalAutoEncoder(Model):
             return K.mean(K.square(y_true - y_pred), axis=[1, 2, 3])
 
         def kl_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
-            kl_loss = -0.5 * K.sum(1 + self.logvar - K.square(self.mean) - K.exp(self.logvar), axis=1)
+            kl_loss = -0.5 * K.sum(1 + self.__mean - K.square(self.__mean) - K.exp(self.__logvar), axis=1)
             return kl_loss
 
         def total_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
@@ -278,7 +278,13 @@ class VariationalAutoEncoder(Model):
         self.skips = skips 
         self.METRICS = [r_loss, kl_loss]
         self.LOSS = total_loss 
-    
+        self.build((None, *img_size))
+        
+    def build(self, input_shape):
+        super(VariationalAutoEncoder, self).build(input_shape)
+        dummy = tf.random.normal((1, *input_shape[1:]))
+        self.call(dummy)
+        
     def call(self, real: tf.Tensor):
         # encoder pass 
         conv1 = self.conv1(real)
@@ -287,8 +293,8 @@ class VariationalAutoEncoder(Model):
         conv4 = self.conv4(conv3)
         conv5 = self.conv5(conv4)
         flat = self.flatten(conv5)
-        mean, log = self.mean(flat), self.logvar(flat)
-        latent = self.latent([mean, log])
+        self.__mean, self.__logvar = self.mean(flat), self.logvar(flat)
+        latent = self.latent([self.__mean, self.__logvar])
         
         # decoder pass 
         reshape = self.transform(latent)

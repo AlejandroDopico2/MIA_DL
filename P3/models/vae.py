@@ -58,7 +58,7 @@ class VAE:
             batch_size: int = 10,
             epochs: int = 10,
             train_patience: int = 10,
-            dev_patience: int = 5,
+            val_patience: int = 5,
             steps_per_epoch: int = 1500,
             optimizer: Optimizer = Adam(1e-4),
         ) -> Dict[str, List[float]]:
@@ -67,25 +67,11 @@ class VAE:
         val_tf = val.to_tf(self.NORM, batch_size, targets=True)
 
         callbacks = [
-            SaveImagesCallback(
-                self.model,
-                val,
-                path,
-                self.NORM,
-                self.DENORM,
-                self.hidden_size,
-                save_frequency=1,
-            ),
-            FID(self.model, val, self.hidden_size, self.NORM, self.DENORM),
+            SaveImagesCallback(self.model, val, f'{path}/val-preds', self.NORM, self.DENORM, save_frequency=1),
+            FID(self.model, train, val, self.NORM, self.DENORM),
             EarlyStopping("loss", patience=train_patience),
-            EarlyStopping("val_loss", patience=dev_patience),
-            ModelCheckpoint(
-                f"{path}/model.h5",
-                "fid",
-                save_weights_only=True,
-                save_best_only=True,
-                verbose=0,
-            ),
+            EarlyStopping("val_loss", patience=val_patience),
+            ModelCheckpoint(f"{path}/model.weights.h5", "val_fid", save_weights_only=True, save_best_only=True, verbose=0),
         ]
         history = self.model.fit(
             train_tf,
@@ -94,11 +80,11 @@ class VAE:
             callbacks=callbacks,
             steps_per_epoch=steps_per_epoch,
             validation_steps=steps_per_epoch,
-        )
+        ).history 
         with open(f"{path}/history.pkl", "wb") as f:
             pickle.dump(history, f)
-        self.model.load_weights(f"{path}/model.h5")
-        self.predict(test, f"{path}/preds/", batch_size)
+        self.model.load_weights(f"{path}/model.weights.h5")
+        self.predict(test, f"{path}/test-preds/", batch_size)
         return history
 
     def predict(self, data: CelebADataset, out: str, batch_size: int = 10):
@@ -106,7 +92,7 @@ class VAE:
             os.makedirs(out)
         inputs, outputs = [], []
         for files, input in data.stream(self.NORM, batch_size):
-            output = self.DENORM(self.model.predict(input))
+            output = self.DENORM(self.model.predict(input, verbose=0))
             for j in range(output.shape[0]):
                 img = Image.fromarray(output[j])
                 img.save(f"{out}/{files[j]}")
