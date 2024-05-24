@@ -21,11 +21,9 @@ if __name__ == "__main__":
     parser.add_argument("--hidden-size", type=int, default=200, help="Hidden size")
     parser.add_argument("--pool", type=str, default='strides', help="Method used as pooling", choices=['strides', 'dilation'])
     parser.add_argument("--residual", action='store_true', help="Whether to use residual blocks")
-    parser.add_argument("--autoencoder", action='store_true', help="Whether to use an autoencoder as GAN generator")
     parser.add_argument("--batch-size", type=int, default=20, help="Batch size")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
     parser.add_argument("--steps", type=int, default=1500, help="Number of steps per epoch")   
-    parser.add_argument("--skips", action='store_true', help="Whether to use skips in the VAE")
 
 
     args = parser.parse_args()
@@ -47,7 +45,7 @@ if __name__ == "__main__":
             steps_per_epoch=args.steps,
         )
     elif 'gan' in args.model:
-        gan = GAN(CelebADataset.IMG_SIZE, args.hidden_size, args.pool, args.residual, args.autoencoder, critic_steps=3, gp_weight=10)
+        gan = GAN(CelebADataset.IMG_SIZE, args.hidden_size, args.pool, args.residual, critic_steps=3, gp_weight=10)
         gopt = Adam(2e-4, beta_1=0.5, beta_2=0.999)
         copt = Adam(2e-4, beta_1=0.5, beta_2=0.999)
         gan.train(

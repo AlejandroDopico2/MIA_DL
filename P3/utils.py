@@ -1,21 +1,18 @@
 import os
-from typing import Dict, List, Tuple, Union, Callable, Optional
-import tensorflow as tf
+from typing import Dict, List, Union, Callable
 import numpy as np
 import plotly.graph_objects as go
 from keras.applications.inception_v3 import InceptionV3, preprocess_input
-from keras.callbacks import Callback, ModelCheckpoint
+from keras.callbacks import Callback
 from numpy import cov, iscomplexobj, trace
 from PIL import Image
 from scipy.linalg import sqrtm
 from keras.models import Model 
 from skimage.transform import resize
 from data import CelebADataset
-from tensorflow.data import Dataset 
-from keras.metrics import Metric 
 
 from tqdm import tqdm 
-
+import matplotlib.pyplot as plt 
 
 
 class FID(Callback):
@@ -148,3 +145,15 @@ def plot_history(
     if isinstance(name, str):
         fig.update_yaxes(title_text=name)
     return fig
+
+
+
+def display(images: np.ndarray, model: Model, max_cols: int = 5):
+    assert images.shape[0] <= max_cols
+    fig, ax = plt.subplots(nrows=1, ncols=max_cols, figsize=(10, 10*max_cols))
+    fake = model.predict(images, verbose=0)
+    for i in range(0, images.shape[0]):
+        ax[i].imshow(fake[i])
+        ax[i].set_axis_off()
+    fig.show()
+            

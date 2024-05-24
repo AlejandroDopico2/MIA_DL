@@ -34,7 +34,6 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam, Optimizer
 from PIL import Image
 from utils import SaveImagesCallback, FID
-from models.layers import VariationalAutoEncoder
 
 class LossHistory(Callback):
     def on_train_begin(self, logs=None):
@@ -58,12 +57,11 @@ class GAN:
         hidden_size: int,
         pool: str,
         residual: bool,
-        autoencoder: bool,
         critic_steps: int,
         gp_weight: float
     ):
         self.hidden_size = hidden_size
-        self.model = WGANGP(img_size, hidden_size, pool, residual, autoencoder, critic_steps, gp_weight)
+        self.model = WGANGP(img_size, hidden_size, pool, residual, critic_steps, gp_weight)
 
     def train(
         self,
@@ -121,7 +119,6 @@ class WGANGP(Model):
         hidden_size: int, 
         pool: str,
         residual: bool,
-        autoencoder: bool,
         critic_steps: int,
         gp_weight: float
     ):
@@ -138,23 +135,19 @@ class WGANGP(Model):
         ], name='discriminator')
         
         # generator
-        if autoencoder:
-            self.generator = VariationalAutoEncoder(
-                img_size, hidden_size, pool, residual, skips=True, act='tanh', name='generator', loss_factor=1000)
-        else:
-            deconv = DeconvBlock if not residual else ResidualDeconvBlock
-            args = dict(bias=False, batch_norm=False) | (dict(dilation=1, strides=2) if pool == 'strides' else dict(dilation=2, pool=True))
-            self.generator = Sequential([
-                Input(shape=(hidden_size,), name='latent-input'),
-                Reshape((1, 1, hidden_size), name='input-reshape'),
-                deconv(1024, 4, 1, padding='valid', bias=False, batch_norm=True, name='deconv1'),
-                deconv(512, 4, **args, name='deconv2'), 
-                deconv(256, 4, **args, name='deconv3'), 
-                deconv(128, 4, **args, name='deconv4'), 
-                deconv(64, 4, **args, name='deconv5'), 
-                Conv2DTranspose(img_size[-1], 4, 2, padding="same", activation="tanh", name='output')
-            ], name='generator')
-        self.from_latent = not autoencoder
+        args = dict(bias=False, batch_norm=False) | (dict(dilation=1, strides=2) if pool == 'strdes' else dict(dilation=2, pool=True))
+        deconv = DeconvBlock if not residual else ResidualDeconvBlock
+        self.generator = Sequential([
+            Input(shape=(hidden_size,), name='latent-input'),
+            Reshape((1, 1, hidden_size), name='input-reshape'),
+            deconv(1024, 4, 1, padding='valid', bias=False, batch_norm=True, name='deconv1'),
+            deconv(512, 4, **args, name='deconv2'), 
+            deconv(256, 4, **args, name='deconv3'), 
+            deconv(128, 4, **args, name='deconv4'), 
+            deconv(64, 4, **args, name='deconv5'), 
+            Conv2DTranspose(img_size[-1], 4, 2, padding="same", activation="tanh", name='output')
+        ], name='generator')
+        self.from_latent = True
         self.hidden_size = hidden_size
         self.critic_steps = critic_steps
         self.gp_weight = gp_weight

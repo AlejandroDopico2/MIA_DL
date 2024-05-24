@@ -41,13 +41,12 @@ class VAE:
             hidden_size: int,
             pool: str,
             residual: bool,
-            skips: bool,
             loss_factor: int = 1000
         ):
         self.hidden_size = hidden_size
         args = dict(dilation=2, strides=1, pool=True) if pool == 'dilation' else dict(strides=2, dilation=1)
         encoder_input, encoder_output, decoder_input, decoder_output, mean_mu, log_var = \
-            (skip_vae if skips else vae)(img_size, hidden_size, act='sigmoid', residual=residual, **args)
+            vae(img_size, hidden_size, act='sigmoid', residual=residual, **args)
         
         def r_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
             return K.mean(K.square(y_true - y_pred), axis=[1, 2, 3])
@@ -58,15 +57,9 @@ class VAE:
         def total_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
             return loss_factor * r_loss(y_true, y_pred) + kl_loss(y_true, y_pred)
         
-        if skips:
-            encoder = Model(encoder_input, encoder_output, name='encoder')
-            decoder = None
-            self.model = Model(encoder_input, decoder_output, name='skip-vae')
-        else:
-            encoder = Model(encoder_input, encoder_output, name='encoder')
-            decoder = Model(decoder_input, decoder_output, name='decoder')
-            self.model = Model(encoder_input, decoder(encoder_output), name='vae')
-            
+        encoder = Model(encoder_input, encoder_output, name='encoder')
+        decoder = Model(decoder_input, decoder_output, name='decoder')
+        self.model = Model(encoder_input, decoder(encoder_output), name='vae')
         self.model.METRICS = [r_loss, kl_loss]
         self.model.LOSS = total_loss
         self.model.encoder = encoder
