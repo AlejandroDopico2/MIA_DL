@@ -60,7 +60,7 @@ class AmazonDataset:
             max_tokens=self.max_features,
             standardize="lower_and_strip_punctuation",
             split="whitespace",
-            output_mode='int',
+            output_mode="int",
             output_sequence_length=self.sequence_length,
         )
 
@@ -82,19 +82,25 @@ class AmazonDataset:
         shuffled_indices = tf.random.shuffle(indices)
 
         # Define the split index
-        split_index = tf.cast((1 - validation_split) * tf.cast(num_samples, tf.float32), tf.int32)
-
+        split_index = tf.cast(
+            (1 - validation_split) * tf.cast(num_samples, tf.float32), tf.int32
+        )
 
         # Split the data
         train_indices = shuffled_indices[:split_index]
         val_indices = shuffled_indices[split_index:]
-        
+
         train_input = tf.gather(input_data, train_indices)
         val_input = tf.gather(input_data, val_indices)
         train_labels = tf.gather(labels, train_indices)
         val_labels = tf.gather(labels, val_indices)
 
-        return tuple(map(lambda x: tf.cast(x, tf.int32), (train_input, val_input, train_labels, val_labels)))
+        return tuple(
+            map(
+                lambda x: tf.cast(x, tf.int32),
+                (train_input, val_input, train_labels, val_labels),
+            )
+        )
 
     @classmethod
     def read_data(cls, lines: List[str]):

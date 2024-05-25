@@ -1,5 +1,6 @@
 import tensorflow as tf
-from keras.layers import Conv2D, Layer, BatchNormalization, ReLU, Add
+from keras.layers import Add, BatchNormalization, Conv2D, Layer, ReLU
+
 
 class ConvolutionBlock(Layer):
     def __init__(self, filters: int):

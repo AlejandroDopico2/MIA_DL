@@ -1,13 +1,15 @@
+from typing import List, Optional, Tuple
+
 import tensorflow as tf
+from keras import layers
+from keras.applications import MobileNetV2, ResNet50V2, Xception
 from keras.models import Model
-from keras import layers 
-from keras.applications import ResNet50V2, MobileNetV2, Xception
-from layers import IdentityBlock, ConvolutionBlock, Inception
-from typing import List, Tuple, Optional
+from layers import ConvolutionBlock, IdentityBlock, Inception
 from utils import freeze
 
+
 class SimpleModel(Model):
-    def __init__(self, num_classes: int, name: str = 'SimpleModel'):
+    def __init__(self, num_classes: int, name: str = "SimpleModel"):
         super().__init__(name=name)
 
         self.rescaling = layers.Rescaling(1.0 / 255)
@@ -28,7 +30,13 @@ class SimpleModel(Model):
 
 
 class MidModel(Model):
-    def __init__(self, num_classes: int, kernel_size: int = 3, dropout: float = 0.25, name: str = 'MidModel'):
+    def __init__(
+        self,
+        num_classes: int,
+        kernel_size: int = 3,
+        dropout: float = 0.25,
+        name: str = "MidModel",
+    ):
         super().__init__(name=name)
 
         self.rescaling = layers.Rescaling(1.0 / 255)
@@ -66,8 +74,15 @@ class MidModel(Model):
         x = self.dense(x)
         return self.output_layer(x)
 
+
 class CustomResNet(Model):
-    def __init__(self, num_classes: int, num_blocks: int = 4, filters_size: int = 64, name: str = 'ResNet'):
+    def __init__(
+        self,
+        num_classes: int,
+        num_blocks: int = 4,
+        filters_size: int = 64,
+        name: str = "ResNet",
+    ):
         super(CustomResNet, self).__init__(name=name)
 
         self.rescaling = layers.Rescaling(1.0 / 255)
@@ -104,27 +119,30 @@ class CustomResNet(Model):
         x = layers.GlobalAveragePooling2D()(x)
         return self.output_layer(x)
 
+
 class InceptionModel(Model):
     def __init__(
-        self, 
-        num_classes: int, 
-        num_blocks: int, 
-        n_filters = List[Tuple[int]], 
+        self,
+        num_classes: int,
+        num_blocks: int,
+        n_filters=List[Tuple[int]],
         kernel_size: int = 3,
         dropout: float = 0.2,
-        name: str = 'InceptionModel'
+        name: str = "InceptionModel",
     ):
         super(InceptionModel, self).__init__(name=name)
 
         self.rescaling = layers.Rescaling(1.0 / 255)
-    
+
         self.inception_blocks = []
         self.convolutional_blocks = []
         self.batch_norm_layers = []
 
         for i in range(num_blocks):
             self.inception_blocks.append(Inception(n_filters=n_filters[i]))
-            self.convolutional_blocks.append(layers.Conv2D(n_filters[i][-1], kernel_size = kernel_size))
+            self.convolutional_blocks.append(
+                layers.Conv2D(n_filters[i][-1], kernel_size=kernel_size)
+            )
             self.batch_norm_layers.append(layers.BatchNormalization())
 
         self.dense = layers.Dense(1000, activation="relu")
@@ -133,32 +151,37 @@ class InceptionModel(Model):
 
     def call(self, inputs: tf.Tensor, training=False):
         x = self.rescaling(inputs)
-        
-        for i, (block, conv, bn) in enumerate(zip(self.inception_blocks, self.convolutional_blocks, self.batch_norm_layers)):
+
+        for i, (block, conv, bn) in enumerate(
+            zip(
+                self.inception_blocks, self.convolutional_blocks, self.batch_norm_layers
+            )
+        ):
             x = block(x)
-            x = bn(x, training = training)
+            x = bn(x, training=training)
             x = conv(x)
 
-            if i != len(self.inception_blocks)-1:
+            if i != len(self.inception_blocks) - 1:
                 x = layers.MaxPool2D()(x)
-        
+
         x = layers.Flatten()(x)
         x = self.dropout(x)
         x = self.dense(x)
-        
+
         return self.output_layer(x)
 
+
 class PretrainedModel(Model):
-    AVAILABLE = {'resnet': ResNet50V2, 'mobile': MobileNetV2, 'xception': Xception}
-    
+    AVAILABLE = {"resnet": ResNet50V2, "mobile": MobileNetV2, "xception": Xception}
+
     def __init__(
-        self, 
-        num_classes: int, 
-        img_size: int, 
-        pretrained: str, 
-        proj: int = 1000, 
+        self,
+        num_classes: int,
+        img_size: int,
+        pretrained: str,
+        proj: int = 1000,
         defreeze: int = -1,
-        name: Optional[str] = None
+        name: Optional[str] = None,
     ):
         """Image classifier model with pretrained weights.
 
@@ -169,13 +192,22 @@ class PretrainedModel(Model):
             proj (int, optional): Hidden dense projection.
             defreeze (int, optional): Number of layers to defreeze.. Defaults to -1.
         """
-        assert pretrained in self.AVAILABLE.keys(), 'Pretrained model not available for this implementation'
+        assert (
+            pretrained in self.AVAILABLE.keys()
+        ), "Pretrained model not available for this implementation"
         super().__init__(name=name or pretrained)
-        
+
         self.rescaling = layers.Rescaling(1.0 / 255)
-        self.model = freeze(self.AVAILABLE[pretrained](weights='imagenet', include_top=False, input_shape=(img_size, img_size, 3)), defreeze)
+        self.model = freeze(
+            self.AVAILABLE[pretrained](
+                weights="imagenet",
+                include_top=False,
+                input_shape=(img_size, img_size, 3),
+            ),
+            defreeze,
+        )
         self.flatten = layers.Flatten()
-        self.proj = layers.Dense(proj, activation='relu')
+        self.proj = layers.Dense(proj, activation="relu")
         self.dense = layers.Dense(num_classes, activation="softmax")
 
     def call(self, inputs, training=False):
