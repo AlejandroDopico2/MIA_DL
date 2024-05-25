@@ -1,5 +1,5 @@
 import os
-from typing import Callable, Iterable, List, Tuple, Optional
+from typing import Callable, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -7,17 +7,18 @@ from PIL import Image
 from tensorflow.data import Dataset
 from tensorflow.keras.utils import image_dataset_from_directory
 
-PARTITIONS = ['train', 'val', 'test']
+PARTITIONS = ["train", "val", "test"]
+
 
 class CelebADataset:
     IMG_SIZE = (64, 64, 3)
 
-    def __init__(self, partition: str, folder: str = 'archive'):
+    def __init__(self, partition: str, folder: str = "archive"):
         self.folder = folder
         self.partition = partition
-        
+
     def __len__(self) -> int:
-        return len(os.listdir(f'{self.folder}/{self.partition}'))
+        return len(os.listdir(f"{self.folder}/{self.partition}"))
 
     def to_tf(
         self,
@@ -41,21 +42,20 @@ class CelebADataset:
         if targets:
             df = Dataset.zip(df, df)
         return df
-    
+
     def __getitem__(self, filename: str) -> np.ndarray:
-        img = Image.open(f'{self.folder}/{self.partition}/{filename}')
+        img = Image.open(f"{self.folder}/{self.partition}/{filename}")
         img = img.resize(self.IMG_SIZE[:2])
         return np.array(img)
-    
-    @property 
+
+    @property
     def imgs(self) -> List[np.ndarray]:
         images = []
-        for file in os.listdir(f'{self.folder}/{self.partition}'):
-            img = Image.open(f'{self.folder}/{self.partition}/{file}')
+        for file in os.listdir(f"{self.folder}/{self.partition}"):
+            img = Image.open(f"{self.folder}/{self.partition}/{file}")
             img = img.resize(self.IMG_SIZE[:2])
             images.append(np.array(img))
-        return images 
-        
+        return images
 
     def stream(
         self, norm: Optional[Callable], batch_size: int
