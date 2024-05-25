@@ -166,21 +166,19 @@ def vae(img_size: Tuple[int, int, int], hidden_size: int, act: str, residual: bo
     deconv = DeconvBlock if not residual else ResidualDeconvBlock
     
     encoder_input = Input(img_size, name='encoder-input')
-    conv1 = conv(32, 3, **args, name='conv1')(encoder_input)
-    conv2 = conv(32, 3, **args, name='conv2')(conv1)
-    conv3 = conv(32, 3, **args, name='conv3')(conv2)
-    conv4 = conv(32, 3, **args, name='conv4')(conv3)
-    latent = Flatten()(conv4)
+    conv1 = conv(64, 3, **args, name='conv1')(encoder_input)
+    conv2 = conv(128, 3, **args, name='conv2')(conv1)
+    conv3 = conv(256, 3, **args, name='conv3')(conv2)
+    latent = Flatten()(conv3)
     mean_mu = Dense(hidden_size, name="mu")(latent)
     log_var = Dense(hidden_size, name="log-var")(latent)
     encoder_output = Lambda(sampling, name="encoder-output")([mean_mu, log_var])
     
-    shape = (img_size[0]//2**4, img_size[1]//2**4, 32)
+    shape = (img_size[0]//2**3, img_size[1]//2**3, 256)
     decoder_input = Input((hidden_size,))
     transform = Sequential([Dense(np.prod(shape)), Reshape(shape)], name='transform')(decoder_input)
-    deconv4 = deconv(32, 3, **args, name='deconv4')(transform)
-    deconv3 = deconv(32, 3, **args, name='deconv3')(deconv4)
-    deconv2 = deconv(32, 3, **args, name='deconv2')(deconv3)
+    deconv3 = deconv(128, 3, **args, name='deconv3')(transform)
+    deconv2 = deconv(64, 3, **args, name='deconv2')(deconv3)
     deconv1 = deconv(32, 3, **args, name='deconv1')(deconv2)
     decoder_output = Conv2D(3, 1, activation=act, name='output')(deconv1)
     return encoder_input, encoder_output, decoder_input, decoder_output, mean_mu, log_var

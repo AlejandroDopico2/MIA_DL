@@ -7,19 +7,17 @@ from PIL import Image
 from tensorflow.data import Dataset
 from tensorflow.keras.utils import image_dataset_from_directory
 
-PARTITIONS = ["train", "val", "test"]
-
+PARTITIONS = ['train', 'val', 'test']
 
 class CelebADataset:
-    FOLDER = "archive"
-    IMG_SIZE = (128, 128, 3)
+    IMG_SIZE = (64, 64, 3)
 
-    def __init__(self, partition: str):
-        assert partition in PARTITIONS, f"Partition {partition} not available"
+    def __init__(self, partition: str, folder: str = 'archive'):
+        self.folder = folder
         self.partition = partition
         
     def __len__(self) -> int:
-        return len(os.listdir(f'{self.FOLDER}/{self.partition}'))
+        return len(os.listdir(f'{self.folder}/{self.partition}'))
 
     def to_tf(
         self,
@@ -30,7 +28,7 @@ class CelebADataset:
         targets: bool = False,
     ) -> Dataset:
         df = image_dataset_from_directory(
-            f"{self.FOLDER}/{self.partition}",
+            f"{self.folder}/{self.partition}",
             labels=None,
             color_mode="rgb",
             image_size=self.IMG_SIZE[:2],
@@ -43,15 +41,30 @@ class CelebADataset:
         if targets:
             df = Dataset.zip(df, df)
         return df
+    
+    def __getitem__(self, filename: str) -> np.ndarray:
+        img = Image.open(f'{self.folder}/{self.partition}/{filename}')
+        img = img.resize(self.IMG_SIZE[:2])
+        return np.array(img)
+    
+    @property 
+    def imgs(self) -> List[np.ndarray]:
+        images = []
+        for file in os.listdir(f'{self.folder}/{self.partition}'):
+            img = Image.open(f'{self.folder}/{self.partition}/{file}')
+            img = img.resize(self.IMG_SIZE[:2])
+            images.append(np.array(img))
+        return images 
+        
 
     def stream(
         self, norm: Optional[Callable], batch_size: int
     ) -> Iterable[Tuple[List[str], np.ndarray]]:
-        files = os.listdir(f"{self.FOLDER}/{self.partition}/")
+        files = os.listdir(f"{self.folder}/{self.partition}/")
         for i in range(0, len(files), batch_size):
             batch = []
             for file in files[i : (i + batch_size)]:
-                img = Image.open(f"{self.FOLDER}/{self.partition}/{file}")
+                img = Image.open(f"{self.folder}/{self.partition}/{file}")
                 img = img.resize(self.IMG_SIZE[:2])
                 img = np.array(img)
                 batch.append(norm(img) if norm is not None else img)

@@ -1,8 +1,8 @@
 import os
-from typing import Dict, List, Union, Callable
+from typing import Dict, List, Union, Callable, Tuple
 import numpy as np
 import plotly.graph_objects as go
-from keras.applications.inception_v3 import InceptionV3, preprocess_input
+from keras.applications.inception_v3 import preprocess_input
 from keras.callbacks import Callback
 from numpy import cov, iscomplexobj, trace
 from PIL import Image
@@ -10,17 +10,19 @@ from scipy.linalg import sqrtm
 from keras.models import Model 
 from skimage.transform import resize
 from data import CelebADataset
-
 from tqdm import tqdm 
 import matplotlib.pyplot as plt 
-
+from data import CelebADataset
+from IPython.display import HTML
+import plotly.graph_objects as go 
 
 class FID(Callback):
-    INCEPTION_SIZE = (299, 299, 3)
+    IMG_SIZE = (256, 256, 3)
     
     def __init__(
             self, 
             model: Model,
+            inception: Model,
             train: CelebADataset,
             val: CelebADataset,
             NORM: Callable,
@@ -45,7 +47,7 @@ class FID(Callback):
         self.model = model 
         self.NORM = NORM 
         self.DENORM = DENORM
-        self.fmodel = InceptionV3(include_top=False, pooling='avg', input_shape=self.INCEPTION_SIZE)
+        self.inception = inception
         self.n_samples = n_samples
         self.batch_size = batch_size
         
@@ -58,13 +60,12 @@ class FID(Callback):
             self.val.append(next(val_stream)[1])
 
         # precompute mean and standard deviation from the ground truth 
-        self.mu, self.sigma = 0, 0
+        act = []
         for real in tqdm(self.train, desc='inception', total=len(self.train), leave=False):
-            act = self.fmodel.predict(self.preprocess(real), verbose=0)
-            self.mu += act.mean(axis=0)
-            self.sigma += cov(act, rowvar=False)
-        self.mu /= len(self.train)
-        self.sigma /= len(self.train)
+            act.append(self.inception.predict(self.preprocess(real), verbose=0))
+        act = np.concatenate(act, 0)
+        self.mu = act.mean(axis=0)
+        self.sigma = cov(act, rowvar=False)
 
         
     def on_epoch_end(self, epoch, logs):
@@ -72,13 +73,12 @@ class FID(Callback):
         logs['val_fid'] = self.eval(self.val)
 
     def eval(self, data: List[np.ndarray]) -> float:
-        mu, sigma = 0, 0
-        for real in tqdm(data, desc='saving-data', total=len(data), leave=False):
+        act = []
+        for real in tqdm(data, desc='fid-score', total=len(data), leave=False):
             fake = self.preprocess(self.DENORM(self.model.predict(real, verbose=0)))
-            act = self.fmodel.predict(fake, verbose=0)
-            mu += act.mean(axis=0)
-            sigma += cov(act, rowvar=False)
-        mu, sigma = mu/len(data), sigma/len(data)
+            act.append(self.inception.predict(fake, verbose=0))
+        act = np.concatenate(act, 0)
+        mu, sigma = act.mean(axis=0), cov(act, rowvar=False) 
         ssdiff = np.sum((self.mu - mu) ** 2.0)
         covmean = sqrtm(self.sigma.dot(sigma))
         if iscomplexobj(covmean):
@@ -87,9 +87,41 @@ class FID(Callback):
         
 
     def preprocess(self, imgs: np.ndarray) -> np.ndarray:
-        return np.stack(
-            [preprocess_input(resize(img, self.INCEPTION_SIZE, 0)) for img in imgs], 0
-        )
+        return np.stack([preprocess_input(resize(img, self.IMG_SIZE, 0)) for img in imgs], 0)
+    
+    
+    
+def get_acts(inception: Model, data: Union[CelebADataset, np.ndarray], batch_size: int = 10, img_size: Tuple[int, int, int] = (256, 256, 3)):
+    if isinstance(data, np.ndarray):
+        acts = []
+        for i in range(0, data.shape[0], batch_size):
+            input = np.stack([preprocess_input(resize(img, img_size, 0)) for img in data[i:(i+batch_size)]])
+            acts.append(inception.predict(input, verbose=0))
+    else:
+        acts = []
+        for _, input in data.stream(None, batch_size):
+            input = np.stack([preprocess_input(resize(img, img_size, 0)) for img in input])
+            acts.append(inception.predict(input, verbose=0))
+    return np.concatenate(acts, 0)
+        
+
+def fid_score(real_act: np.ndarray, fake_act: np.ndarray) -> float:
+    """
+    Computes the FID score between a set of real and generated images.
+    
+    Args:
+        real_act (np.ndarray): Set of real activations.
+        fake_act (np.ndarray): Set of generated activations.
+        batch_size (int): Batch size.
+    """
+    real_mu, real_sigma = real_act.mean(0), cov(real_act, rowvar=False)
+    fake_mu, fake_sigma = fake_act.mean(0), cov(fake_act, rowvar=False)
+    ssdiff = np.sum((real_mu - fake_mu) ** 2.0)
+    covmean = sqrtm(real_sigma.dot(fake_sigma))
+    if iscomplexobj(covmean):
+        covmean = covmean.real
+    return ssdiff + trace(real_sigma + fake_sigma - 2.0 * covmean)
+
 
 
 class SaveImagesCallback(Callback):
@@ -124,6 +156,8 @@ class SaveImagesCallback(Callback):
             img = Image.fromarray(output_batch[i])
             img.save(f"{output_folder}/{file}")
 
+
+
 def plot_history(
     history: Dict[str, List[float]], name: Union[str, List[str]] = "loss"
 ) -> go.Figure:
@@ -148,12 +182,32 @@ def plot_history(
 
 
 
-def display(images: np.ndarray, model: Model, max_cols: int = 5):
-    assert images.shape[0] <= max_cols
-    fig, ax = plt.subplots(nrows=1, ncols=max_cols, figsize=(10, 10*max_cols))
-    fake = model.predict(images, verbose=0)
-    for i in range(0, images.shape[0]):
-        ax[i].imshow(fake[i])
-        ax[i].set_axis_off()
+def display(real: np.ndarray, fake: np.ndarray, max_cols: int = 5):
+    assert real.shape[0] <= max_cols
+    assert real.shape[0] == fake.shape[0]
+    fig, ax = plt.subplots(nrows=2, ncols=max_cols, figsize=(5*max_cols, 10))
+    for i in range(real.shape[0]):
+        ax[0, i].imshow(real[i])
+        ax[1, i].imshow(fake[i])
+        ax[1, i].set_axis_off()
+        ax[0, i].set_axis_off()
     fig.show()
-            
+    
+   
+def plot_embeds(embeds: List[np.ndarray], groups: List[str], title: str = 'Embedding projection') -> go.Figure:
+    n_samples = len(embeds)//len(groups)
+    fig = go.Figure()
+    for i, group in enumerate(groups):
+        _embed = embeds[(i*n_samples):(i*n_samples+n_samples)]
+        fig.add_trace(
+            go.Scatter3d(
+                x=_embed[:, 0], y=_embed[:, 1], z=_embed[:, 2], name=group,
+                mode='markers'
+        ))
+    fig.update_layout(
+        width=1000, height=600, template='seaborn', 
+        title_text=title, margin=dict(b=20, l=20, r=20)
+        )
+    return fig 
+
+

@@ -29,17 +29,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
     train, val, test = map(CelebADataset, ("train", "val", "test"))
 
-    path = f"{args.path}/{args.model}_{args.hidden_size}_{args.pool}"
+    path = f"{args.path}/{args.model}_{args.hidden_size}_{args.pool}" + '_residual'*(args.residual)
 
     if args.model == "vae":
         disable_eager_execution()
-        vae = VAE(CelebADataset.IMG_SIZE, args.hidden_size, args.pool, args.residual, args.skips)
+        vae = VAE(CelebADataset.IMG_SIZE, args.hidden_size, args.pool, args.residual)
         vae.train(
             train,
             val,
             test,
             path,
-            optimizer=Adam(1e-4),
+            optimizer=Adam(5e-4),
             epochs=args.epochs,
             batch_size=args.batch_size,
             steps_per_epoch=args.steps,

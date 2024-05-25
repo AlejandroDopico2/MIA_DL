@@ -33,7 +33,10 @@ from tensorflow.keras.metrics import Mean
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam, Optimizer
 from PIL import Image
-from utils import SaveImagesCallback, FID
+from tqdm import tqdm 
+from utils import SaveImagesCallback, FID, fid_score, get_acts
+from keras.applications.inception_v3 import InceptionV3
+
 
 class LossHistory(Callback):
     def on_train_begin(self, logs=None):
@@ -47,9 +50,9 @@ class LossHistory(Callback):
 
         
 class GAN:
-    NORM = lambda _, x: (tf.cast(x, tf.float32) - 127.5) / 127.5
-    DENORM = lambda _, x: np.uint8(x * 127.5 + 127.5)
-    INCEPTION_SIZE = (299, 299, 3)
+    NORM = lambda x: (tf.cast(x, tf.float32) - 127.5) / 127.5
+    DENORM = lambda x: np.uint8(x * 127.5 + 127.5)
+    INCEPTION_SIZE = (256, 256, 3)
 
     def __init__(
         self,
@@ -58,10 +61,11 @@ class GAN:
         pool: str,
         residual: bool,
         critic_steps: int,
-        gp_weight: float
+        gp_weight: float,
     ):
         self.hidden_size = hidden_size
         self.model = WGANGP(img_size, hidden_size, pool, residual, critic_steps, gp_weight)
+        self.inception = InceptionV3(include_top=False, pooling='avg', input_shape=self.INCEPTION_SIZE)
 
     def train(
         self,
@@ -77,14 +81,13 @@ class GAN:
         g_optimizer: Optimizer = Adam(2e-4, 0.5, 0.999),
     ) -> Dict[str, List[float]]:
         self.model.compile(c_optimizer, g_optimizer)
-        train_tf = train.to_tf(self.NORM, batch_size, targets=False)
-        val_tf = val.to_tf(self.NORM, batch_size, targets=False)
+        train_tf = train.to_tf(GAN.NORM, batch_size, targets=False)
+        val_tf = val.to_tf(GAN.NORM, batch_size, targets=False)
         callbacks = [
             EarlyStopping("g_loss", patience=train_patience),
-            TensorBoard(log_dir=f"{path}/logs"),
             LossHistory(),
-            FID(self.model, train, val, self.NORM, self.DENORM),
-            SaveImagesCallback(self.model, val, f'{path}/val-preds', self.NORM, self.DENORM, save_frequency=1),
+            FID(self.model, self.inception, train, val, GAN.NORM, GAN.DENORM, batch_size=64),
+            SaveImagesCallback(self.model, val, f'{path}/epoch-preds', GAN.NORM, GAN.DENORM, save_frequency=1),
             ModelCheckpoint(f"{path}/checkpoint/checkpoint.ckpt", 'val_fid', save_weights_only=True, save_best_only=True, verbose=0),
         ]
 
@@ -93,25 +96,41 @@ class GAN:
             steps_per_epoch=steps_per_epoch, validation_steps=steps_per_epoch
         ).history
         self.model.load_weights(f"{path}/checkpoint/checkpoint.ckpt")
-        self.predict(test, f"{path}/test-preds/", batch_size)
         with open(f'{path}/history.pkl', 'wb') as writer:
             pickle.dump(history, writer)
+        self.predict(test, f'{path}/test-preds', batch_size=64)
+            
+        # evaluate 
+        train_score = self.evaluate(train, batch_size=64)
+        val_score = self.evaluate(val, batch_size=64)
+        test_score = self.evaluate(test, batch_size=64)
+        with open(f'{path}/results.pkl', 'wb')  as writer:
+            pickle.dump(dict(train=train_score, val=val_score, test=test_score), writer)
         return history
 
     def predict(self, data: CelebADataset, out: str, batch_size: int = 10):
         if not os.path.exists(out):
             os.makedirs(out)
         inputs, outputs = [], []
-        for files, input in data.stream(self.NORM, batch_size):
+        for files, input in tqdm(data.stream(GAN.NORM, batch_size), total=len(data)//batch_size, desc='predict'):
             latent = tf.random.normal(shape=(input.shape[0], self.hidden_size))
-            output = self.DENORM(self.model.generator.predict(latent, verbose=0))
+            output = GAN.DENORM(self.model.generator.predict(latent, verbose=0))
             for j in range(output.shape[0]):
                 img = Image.fromarray(output[j])
                 img.save(f'{out}/{files[j]}')
             outputs.append(output)
             inputs.append(input)
 
-
+            
+    def evaluate(self, data: CelebADataset, batch_size: int = 10) -> float:
+        fake = []
+        for _, input in tqdm(data.stream(GAN.NORM, batch_size), total=len(data)//batch_size, desc='eval'):
+            fake.append(GAN.DENORM(self.model.predict(input, verbose=0)))
+        fake = get_acts(self.inception, np.concatenate(fake, 0), batch_size)
+        real = get_acts(self.inception, data, batch_size)
+        return fid_score(real, fake)
+        
+        
 class WGANGP(Model):
     def __init__(
         self,
@@ -129,7 +148,6 @@ class WGANGP(Model):
             ConvBlock(32, 4, 2),
             ConvBlock(32, 4, 2),
             ConvBlock(32, 4, 2, dropout=0.3),
-            ConvBlock(32, 4, 2, dropout=0.3),
             Conv2D(1, kernel_size=4, strides=1, padding="valid"),
             Flatten()
         ], name='discriminator')
@@ -140,11 +158,10 @@ class WGANGP(Model):
         self.generator = Sequential([
             Input(shape=(hidden_size,), name='latent-input'),
             Reshape((1, 1, hidden_size), name='input-reshape'),
-            deconv(1024, 4, 1, padding='valid', bias=False, batch_norm=True, name='deconv1'),
-            deconv(512, 4, **args, name='deconv2'), 
-            deconv(256, 4, **args, name='deconv3'), 
-            deconv(128, 4, **args, name='deconv4'), 
-            deconv(64, 4, **args, name='deconv5'), 
+            deconv(256, 4, 1, padding='valid', bias=False, batch_norm=True, name='deconv1'),
+            deconv(128, 4, **args, name='deconv2'), 
+            deconv(64, 4, **args, name='deconv3'), 
+            deconv(32, 4, **args, name='deconv4'), 
             Conv2DTranspose(img_size[-1], 4, 2, padding="same", activation="tanh", name='output')
         ], name='generator')
         self.from_latent = True
