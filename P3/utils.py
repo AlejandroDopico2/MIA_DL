@@ -27,7 +27,7 @@ class FID(Callback):
         NORM: Callable,
         DENORM: Callable,
         batch_size: int = 10,
-        n_samples: int = 500,
+        n_samples: int = 100,
         **kwargs,
     ):
         """
@@ -144,7 +144,7 @@ class SaveImagesCallback(Callback):
         NORM: Callable,
         DENORM: Callable,
         save_frequency: int = 5,
-        n_samples: int = 100,
+        n_samples: int = 20,
     ):
         super(SaveImagesCallback, self).__init__()
         self.model = model

@@ -95,8 +95,7 @@ class VAE:
                 val,
                 f"{path}/epoch-preds",
                 VAE.NORM,
-                VAE.DENORM,
-                save_frequency=1,
+                VAE.DENORM
             ),
             FID(
                 self.model,
@@ -105,7 +104,7 @@ class VAE:
                 val,
                 VAE.NORM,
                 VAE.DENORM,
-                batch_size=64,
+                batch_size,
             ),
             EarlyStopping("loss", patience=train_patience),
             EarlyStopping("val_loss", patience=val_patience),
@@ -128,10 +127,10 @@ class VAE:
         with open(f"{path}/history.pkl", "wb") as f:
             pickle.dump(history, f)
         self.model.load_weights(f"{path}/model.h5")
-        self.predict(test, f"{path}/test-preds", batch_size=64)
-        train_score = self.evaluate(train, batch_size=64)
-        val_score = self.evaluate(val, batch_size=64)
-        test_score = self.evaluate(test, batch_size=64)
+        self.predict(test, f"{path}/test-preds", batch_size)
+        train_score = self.evaluate(train, batch_size)
+        val_score = self.evaluate(val, batch_size)
+        test_score = self.evaluate(test, batch_size)
         with open(f"{path}/results.pkl", "wb") as writer:
             pickle.dump(dict(train=train_score, val=val_score, test=test_score), writer)
         return history

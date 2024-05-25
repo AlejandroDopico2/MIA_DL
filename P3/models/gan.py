@@ -86,7 +86,7 @@ class GAN:
                 val,
                 GAN.NORM,
                 GAN.DENORM,
-                batch_size=64,
+                batch_size,
             ),
             SaveImagesCallback(
                 self.model,
@@ -94,7 +94,6 @@ class GAN:
                 f"{path}/epoch-preds",
                 GAN.NORM,
                 GAN.DENORM,
-                save_frequency=1,
             ),
             ModelCheckpoint(
                 f"{path}/checkpoint/checkpoint.ckpt",
@@ -116,12 +115,12 @@ class GAN:
         self.model.load_weights(f"{path}/checkpoint/checkpoint.ckpt")
         with open(f"{path}/history.pkl", "wb") as writer:
             pickle.dump(history, writer)
-        self.predict(test, f"{path}/test-preds", batch_size=64)
+        self.predict(test, f"{path}/test-preds", batch_size)
 
         # evaluate
-        train_score = self.evaluate(train, batch_size=64)
-        val_score = self.evaluate(val, batch_size=64)
-        test_score = self.evaluate(test, batch_size=64)
+        train_score = self.evaluate(train, batch_size)
+        val_score = self.evaluate(val, batch_size)
+        test_score = self.evaluate(test, batch_size)
         with open(f"{path}/results.pkl", "wb") as writer:
             pickle.dump(dict(train=train_score, val=val_score, test=test_score), writer)
         return history
