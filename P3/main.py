@@ -64,7 +64,7 @@ if __name__ == "__main__":
             args.pool,
             args.residual,
             critic_steps=3,
-            gp_weight=10,
+            gp_weight=1,
         )
         gopt = Adam(2e-4, beta_1=0.5, beta_2=0.999)
         copt = Adam(2e-4, beta_1=0.5, beta_2=0.999)

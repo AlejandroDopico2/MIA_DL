@@ -170,9 +170,10 @@ class WGANGP(Model):
         self.critic = Sequential(
             [
                 InputLayer(img_size),
-                ConvBlock(32, 4, 2),
-                ConvBlock(32, 4, 2),
-                ConvBlock(32, 4, 2, dropout=0.3),
+                ConvBlock(64, 4, 2),
+                ConvBlock(128, 4, 2),
+                ConvBlock(256, 4, 2),
+                ConvBlock(512, 4, 2, dropout=0.3),
                 Conv2D(1, kernel_size=4, strides=1, padding="valid"),
                 Flatten(),
             ],
@@ -191,7 +192,7 @@ class WGANGP(Model):
                 Input(shape=(hidden_size,), name="latent-input"),
                 Reshape((1, 1, hidden_size), name="input-reshape"),
                 deconv(
-                    256,
+                    512,
                     4,
                     1,
                     padding="valid",
@@ -199,9 +200,9 @@ class WGANGP(Model):
                     batch_norm=True,
                     name="deconv1",
                 ),
-                deconv(128, 4, **args, name="deconv2"),
-                deconv(64, 4, **args, name="deconv3"),
-                deconv(32, 4, **args, name="deconv4"),
+                deconv(256, 4, **args, name="deconv2"),
+                deconv(128, 4, **args, name="deconv3"),
+                deconv(64, 4, **args, name="deconv4"),
                 Conv2DTranspose(
                     img_size[-1], 4, 2, padding="same", activation="tanh", name="output"
                 ),
