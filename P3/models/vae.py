@@ -213,7 +213,7 @@ class VAE:
             desc="from-latent",
             leave=False,
         ):
-            _latent = latent[i : (i + batch_size)]
+            _latent = np.stack(latent[i : (i + batch_size)])
             fake += list(self.model.decoder.predict(_latent, verbose=0))
         return fake
 
