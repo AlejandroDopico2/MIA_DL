@@ -153,6 +153,9 @@ class GAN:
         fake = get_acts(self.inception, np.concatenate(fake, 0), batch_size)
         real = get_acts(self.inception, data, batch_size)
         return fid_score(real, fake)
+    
+    def generate(self, latent: np.ndarray) -> List[np.ndarray]:
+        return list(GAN.DENORM(self.model.generator.predict(latent, verbose=0)))
 
 
 class WGANGP(Model):
@@ -318,3 +321,4 @@ class WGANGP(Model):
 
     def call(self, real: tf.Tensor):
         return self.generator(self.get_inputs(real))
+
